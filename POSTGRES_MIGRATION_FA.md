@@ -1,5 +1,11 @@
 # انتقال دیتابیس ForexFactoryNews به PostgreSQL
 
+> **نصب خودکار:** `scripts/install.sh` (گزینه ۱ در بخش Database) خودش PostgreSQL را نصب
+> می‌کند، کاربر و دیتابیس اختصاصی با رمز تصادفی می‌سازد، رمز را در `.env` ذخیره می‌کند،
+> جدول‌ها را می‌سازد و در صورت وجود `data/forexbot.db` اطلاعات قدیمی را منتقل می‌کند.
+> فایل‌های مربوط در پوشه `db/` هستند. بررسی دستی: `.venv/bin/python -m db.setup_db`
+> بخش‌های زیر فقط برای نصب دستی یا سرور PostgreSQL موجود/راه دور لازم‌اند.
+
 دیتابیس زنده ربات PostgreSQL است. فایل SQLite فقط برای انتقال اطلاعات قدیمی و
 قالب قابل‌حمل بکاپ استفاده می‌شود. کش JSON مربوط به API جداست و منتقل نمی‌شود.
 
@@ -40,7 +46,7 @@ CREATE DATABASE forexfactory OWNER forexfactory;
 ۴. در ریشه پروژه دستور زیر را اجرا کنید:
 
 ```bash
-.venv/bin/python -m bot.migrate_sqlite
+.venv/bin/python -m db.migrate_sqlite
 ```
 
 پیش‌فرض، فایل `data/forexbot.db` است. برای فایل دیگر مسیر آن را به عنوان آرگومان

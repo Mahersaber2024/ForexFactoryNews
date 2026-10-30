@@ -416,8 +416,13 @@ cmd_update(){
       git -C "$P_DIR" pull --ff-only || die "git pull failed (local changes?)."
       "$P_DIR/.venv/bin/pip" install -q -r "$P_DIR/requirements.txt"
       if unit_belongs "forexfactory-bot.service" "$P_DIR"; then
-        if ! (cd "$P_DIR" && .venv/bin/python -c 'from bot import postgres; postgres.initialize()'); then
-          die "PostgreSQL setup/migration needed. Existing bot was not restarted. See README."
+        if [[ -z "$("$P_DIR/.venv/bin/python" "$P_DIR/bot_settings.py" get DB_PASSWORD 2>/dev/null)" ]]; then
+          info "No PostgreSQL configured yet - installing and setting it up automatically..."
+          bash "$P_DIR/db/provision_postgres.sh" "$P_DIR" || die "Automatic PostgreSQL setup failed. Existing bot was not restarted."
+        fi
+        systemctl stop forexfactory-bot.service 2>/dev/null || true
+        if ! (cd "$P_DIR" && .venv/bin/python -m db.setup_db); then
+          die "Database setup/migration failed. The bot was not restarted. See README."
         fi
       fi
       [[ -f "$P_DIR/scripts/rename-services.sh" ]] && bash "$P_DIR/scripts/rename-services.sh" "$P_DIR"

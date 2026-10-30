@@ -38,6 +38,12 @@ forexfactory-api/
 │   ├── content/             → the site (index.html, downloadpage.html, assets/...), served by nginx
 │   │   └── assets/downloads/ → EA builds (.ex5 uploaded from the bot, not in git)
 │   └── nginx/               → nginx template (site + /api/) + rate-limit zone
+├── db/                      → everything database related
+│   ├── postgres.py          → PostgreSQL access + schema
+│   ├── setup_db.py          → test connection, create tables, import old SQLite (run by install.sh)
+│   ├── provision_postgres.sh → installs PostgreSQL and creates the role + database
+│   ├── migrate_sqlite.py    → SQLite <-> PostgreSQL import/export
+│   └── database.py          → legacy SQLite schema (backups / migration only)
 ├── scripts/
 │   ├── install.sh
 │   └── uninstall.sh
@@ -226,8 +232,14 @@ The active URL is stored in the bot's PostgreSQL database, so it survives restar
 
 ### Database upgrades
 
+`install.sh` (and `manager.sh update forex`) now set up the database by themselves: option 1
+installs PostgreSQL, creates the dedicated role and database with a random password, saves
+it in `.env`, creates the tables and imports an old `data/forexbot.db` automatically (a copy
+is kept in `data/backups/`). Option 2 uses an existing PostgreSQL server instead. To re-check
+the database at any time: `.venv/bin/python -m db.setup_db`.
+
 The bot's live data is now in PostgreSQL, with a project-specific schema in
-`bot/postgres.py`. It does not use the schema of any other project. Provision a **dedicated
+`db/postgres.py`. It does not use the schema of any other project. Provision a **dedicated
 empty PostgreSQL database and user** before running the bot, and set `DB_HOST`, `DB_PORT`,
 `DB_NAME`, `DB_USER`, `DB_PASSWORD` and `DB_SSLMODE` using `python bot_settings.py`.
 For remote servers use TLS (`verify-full`) and an appropriate CA certificate. The setup
@@ -235,7 +247,7 @@ will refuse to initialize a nonempty, unrelated database.
 
 For an existing SQLite installation, stop the old bot and back it up first. Preserve
 `.env` and the whole `data/` directory. Install requirements, set the PostgreSQL settings,
-then run `python -m bot.migrate_sqlite` from the project root **before starting the bot**.
+then run `python -m db.migrate_sqlite` from the project root **before starting the bot**.
 The import accepts only an empty PostgreSQL target, runs in one transaction, and does not
 delete or modify the original SQLite file. New startup refuses to silently skip an
 existing old SQLite file. A different source path can be supplied as an argument.
