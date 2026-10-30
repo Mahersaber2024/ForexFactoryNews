@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""Check the PostgreSQL connection, create the schema and import an old SQLite file.
+"""Check the PostgreSQL connection and create/verify the schema.
 
 Run by scripts/install.sh after the role and database have been provisioned.
 Safe to run again at any time.
 
-    python -m db.setup_db            # test connection, create/verify tables, import legacy data
+    python -m db.setup_db            # test connection, create/verify tables
     python -m db.setup_db --show     # only list tables and row counts
-    python -m db.setup_db --no-legacy  # skip the old SQLite import
 """
 from __future__ import annotations
 
 import os
-import shutil
 import sys
-import time
 from contextlib import closing
 from pathlib import Path
 
@@ -40,39 +37,12 @@ def test_connection() -> bool:
 
 def create_tables() -> bool:
     try:
-        postgres.initialize(allow_legacy=True)
+        postgres.initialize()
         print("✓ Tables created/verified")
         return True
     except Exception as exc:
         print(f"✗ Schema setup failed: {exc}", file=sys.stderr)
         return False
-
-
-def legacy_pending() -> bool:
-    if not cfg.DB_PATH.exists():
-        return False
-    with closing(postgres.connect()) as conn:
-        row = conn.execute("SELECT value FROM forex_meta WHERE key = 'legacy_import_complete'").fetchone()
-    return row is None
-
-
-def import_legacy() -> bool:
-    if not legacy_pending():
-        return True
-    from db import migrate_sqlite
-    cfg.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    copy = cfg.BACKUP_DIR / f"forexbot-before-postgres-{time.strftime('%Y%m%d-%H%M%S')}.db"
-    shutil.copy2(cfg.DB_PATH, copy)
-    print(f"✓ Copy of the old database saved: {copy}")
-    try:
-        counts = migrate_sqlite.import_sqlite(cfg.DB_PATH)
-    except Exception as exc:
-        print(f"✗ Legacy import failed (nothing was changed in the old file): {exc}", file=sys.stderr)
-        return False
-    print("✓ Old SQLite data imported:")
-    for table, count in counts.items():
-        print(f"    {table}: {count}")
-    return True
 
 
 def show_tables() -> None:
@@ -98,8 +68,6 @@ def main(argv: list[str] | None = None) -> int:
         show_tables()
         return 0
     if not create_tables():
-        return 1
-    if "--no-legacy" not in args and not import_legacy():
         return 1
     try:
         postgres.initialize()

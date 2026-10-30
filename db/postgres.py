@@ -164,8 +164,8 @@ SCHEMA = (
 )
 
 
-def initialize(allow_legacy=False):
-    """Create schema under an advisory lock; never silently ignore legacy data."""
+def initialize():
+    """Create the schema under an advisory lock."""
     with closing(connect()) as conn, conn:
         conn.execute("SELECT pg_advisory_xact_lock(694711018)")
         existing = {row[0] for row in conn.execute(
@@ -194,11 +194,3 @@ def initialize(allow_legacy=False):
                    if col not in present.get(table, set())]
         if missing:
             raise RuntimeError("PostgreSQL schema is incomplete: " + ", ".join(missing))
-        conn.execute("CREATE TABLE IF NOT EXISTS forex_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        if cfg.DB_PATH.exists() and not allow_legacy:
-            done = conn.execute("SELECT value FROM forex_meta WHERE key = 'legacy_import_complete'").fetchone()
-            if not done:
-                raise RuntimeError(
-                    "Legacy SQLite data found. Stop the old bot and run "
-                    "python -m db.migrate_sqlite before starting the PostgreSQL bot."
-                )
