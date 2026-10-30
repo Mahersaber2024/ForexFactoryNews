@@ -1,0 +1,961 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hey Solo — Advance Trade Management</title>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0ND92CC3J6"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-0ND92CC3J6');
+  </script>
+
+  <meta name="description" content="Hey Solo premium landing page for advanced trade management." />
+  <link rel="icon" href="/assets/images/favicon.ico" sizes="any" />
+  <link rel="shortcut icon" href="/assets/images/favicon.ico" />
+  <link rel="apple-touch-icon" href="/assets/images/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ----- theme variables ----- */
+    :root {
+      --bg-base: #22303f;
+      --bg-card: #293a4d;
+      --accent-1: rgba(100,160,210,.55);
+      --accent-2: rgba(99,102,241,.13);
+      --accent-glow-a: rgba(100,160,210,.20);
+      --accent-glow-b: rgba(100,160,210,.15);
+    }
+    /* ----- reset & base ----- */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; zoom: 115%; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-base);
+      color: #f0f2f8;
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+      cursor: default;
+    }
+    a { text-decoration: none; color: inherit; }
+    img { display: block; max-width: 100%; height: auto; }
+
+    /* ----- terminal grid backdrop ----- */
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+      background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 78%);
+      -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 78%);
+    }
+    .bg-grid::before {
+      content: "";
+      position: absolute;
+      inset: -20% -10%;
+      background: radial-gradient(650px 400px at 14% 0%, var(--accent-glow-a), transparent 60%),
+                  radial-gradient(560px 360px at 86% 8%, var(--accent-glow-b), transparent 60%);
+    }
+    .scan-line {
+      position: absolute;
+      left: 0; right: 0;
+      height: 160px;
+      background: linear-gradient(180deg, transparent, rgba(168,85,247,.045), transparent);
+      animation: scanSweep 16s linear infinite;
+    }
+    @keyframes scanSweep {
+      0% { top: -160px; }
+      100% { top: 100%; }
+    }
+
+    /* ----- cursor glow (desktop) ----- */
+    .cursor-glow {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 30;
+      transform: translate3d(calc(var(--mouse-x, 50vw) - 50%), calc(var(--mouse-y, 50vh) - 50%), 0);
+      background: radial-gradient(circle, rgba(196,181,253,.30) 0%, rgba(168,85,247,.18) 28%, rgba(99,102,241,.10) 54%, rgba(10,13,18,0) 78%);
+      filter: blur(12px);
+      box-shadow: 0 0 40px rgba(168,85,247,.18), 0 0 90px rgba(99,102,241,.12), 0 0 140px rgba(10,13,18,.10);
+      opacity: .9;
+      transition: width .22s ease, height .22s ease, opacity .22s ease;
+    }
+    .cursor-glow.is-over-button { width: 120px; height: 120px; opacity: 1; }
+
+    /* ----- layout containers ----- */
+    .container { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
+    .nav, main { position: relative; z-index: 2; }
+
+    /* ----- nav ----- */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(16px);
+      background: rgba(26,26,46,.65);
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 18px 0;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-logo {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 0 40px rgba(124,58,237,.18);
+    }
+    .brand-text small {
+      display: block;
+      font-family: 'JetBrains Mono', monospace;
+      color: #7c8aa8;
+      font-size: 10px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .brand-text strong {
+      display: block;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: .01em;
+    }
+
+    /* ----- buttons (shared) ----- */
+    .btn {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 52px;
+      padding: 0 24px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.10);
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      font-size: 13.5px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      transition: transform .18s cubic-bezier(.22,1,.36,1), box-shadow .22s ease, background .22s ease, border-color .22s ease;
+      transform: scale(1);
+      will-change: transform;
+      overflow: hidden;
+    }
+    .btn::before {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      background: radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgba(255,255,255,.22) 0%, rgba(196,181,253,.12) 18%, rgba(124,58,237,.16) 40%, rgba(10,13,18,0) 66%);
+      opacity: 0;
+      transition: opacity .22s ease;
+      pointer-events: none;
+    }
+    .btn::after {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border-radius: inherit;
+      background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,0));
+      opacity: .28;
+      pointer-events: none;
+      mix-blend-mode: screen;
+    }
+    .btn:hover { transform: scale(1.03); }
+    .btn.is-hovered::before { opacity: 1; }
+
+    .btn-download {
+      background: linear-gradient(135deg, rgba(124,58,237,.25), rgba(99,102,241,.35));
+      color: #fff;
+      border: 1px solid rgba(168,85,247,.25);
+      box-shadow: 0 16px 40px rgba(0,0,0,.32), 0 0 30px rgba(124,58,237,.16);
+    }
+    .btn-download:hover,
+    .btn-download.is-hovered {
+      box-shadow: 0 22px 48px rgba(0,0,0,.38), 0 0 20px rgba(196,181,253,.10), 0 0 38px rgba(124,58,237,.25), 0 0 70px rgba(99,102,241,.18);
+      border-color: rgba(196,181,253,.30);
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,.04);
+      color: #f0f2f8;
+      border: 1px solid rgba(255,255,255,.10);
+      box-shadow: 0 12px 30px rgba(0,0,0,.24);
+    }
+    .btn-secondary:hover,
+    .btn-secondary.is-hovered {
+      background: rgba(255,255,255,.07);
+      box-shadow: 0 18px 42px rgba(0,0,0,.32), 0 0 22px rgba(168,85,247,.16), 0 0 48px rgba(99,102,241,.14);
+      border-color: rgba(196,181,253,.20);
+    }
+
+    /* ----- hero ----- */
+    .hero { padding: 29px 0 54px; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 0.9fr;
+      gap: 34px;
+      align-items: start;
+    }
+    .left-col, .right-col { display: flex; flex-direction: column; min-height: 100%; }
+
+    /* left-col - وسط‌چین */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .left-col .hero-copy {
+      text-align: left;
+    }
+
+    /* eyebrow - کشیده‌تر و پهن‌تر */
+    .eyebrow {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto 16px;
+      padding: 14px 32px 20px;
+      border-radius: 22px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.08);
+      color: #edf4ff;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .22em;
+      line-height: 1;
+      overflow: hidden;
+    }
+    .eyebrow-premium {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(13px, 1.6vw, 17px);
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #d3b47b;
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+      border: 1px solid rgba(168,85,247,.25);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 10px 30px rgba(0,0,0,.18), 0 0 40px rgba(168,85,247,.08), 0 0 80px rgba(99,102,241,.05);
+      animation: eyebrow-glow-pulse 3.2s ease-in-out infinite;
+      max-width: 100%;
+      width: 100%;
+      padding: 14px 36px 20px;
+      border-radius: 14px;
+    }
+    .eyebrow-premium::before {
+      content: "";
+      position: absolute;
+      left: 20px;
+      right: 20px;
+      bottom: 10px;
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(10,13,18,0) 0%, rgba(168,85,247,.45) 18%, rgba(196,181,253,.98) 50%, rgba(168,85,247,.45) 82%, rgba(10,13,18,0) 100%);
+      box-shadow: 0 0 15px rgba(168,85,247,.30), 0 0 25px rgba(124,58,237,.25), 0 0 40px rgba(99,102,241,.20);
+      animation: eyebrow-line-move 3.2s ease-in-out infinite;
+    }
+    .eyebrow-premium::after {
+      content: "";
+      position: absolute;
+      width: 34%;
+      height: 16px;
+      left: -10%;
+      bottom: 3px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(196,181,253,.85) 0%, rgba(168,85,247,.40) 35%, rgba(99,102,241,0) 72%);
+      filter: blur(10px);
+      opacity: .95;
+      animation: eyebrow-light-sweep 3.2s ease-in-out infinite;
+    }
+    @keyframes eyebrow-glow-pulse {
+      0%,100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 10px 30px rgba(0,0,0,.18), 0 0 40px rgba(168,85,247,.08), 0 0 80px rgba(99,102,241,.05); }
+      50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 10px 30px rgba(0,0,0,.18), 0 0 50px rgba(168,85,247,.20), 0 0 100px rgba(99,102,241,.12), 0 0 150px rgba(124,58,237,.08); }
+    }
+    @keyframes eyebrow-light-sweep {
+      0% { left: -12%; opacity: .15; transform: scaleX(.72); }
+      18% { opacity: .95; }
+      50% { left: 33%; opacity: 1; transform: scaleX(1); }
+      82% { opacity: .88; }
+      100% { left: 78%; opacity: .10; transform: scaleX(.78); }
+    }
+    @keyframes eyebrow-line-move {
+      0%,100% { opacity: .82; transform: scaleX(.94); }
+      50% { opacity: 1; transform: scaleX(1); }
+    }
+
+    h1 {
+      margin: 22px 0 18px;
+      font-family: "Space Grotesk", sans-serif;
+      font-weight: 700;
+      font-size: clamp(46px, 7.5vw, 92px);
+      line-height: .98;
+      letter-spacing: -.02em;
+      max-width: 9ch;
+    }
+
+    /* hero-copy - کوچک‌تر و چپ‌چین */
+    .hero-copy {
+      max-width: 50ch;
+      color: #b0bdd9;
+      font-size: 16px;
+      line-height: 1.85;
+      margin: 0 auto 28px;
+      text-align: left;
+    }
+
+    /* feature list - با آیکون یکسان */
+    .feature-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 14px;
+      margin: 14px auto 20px;
+      padding: 0;
+      list-style: none;
+      max-width: 90%;
+      width: 100%;
+    }
+    .feature-list li {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      font-size: 12.5px;
+      color: #b0bdd9;
+      line-height: 1.3;
+      padding: 4px 8px;
+      border-radius: 8px;
+      cursor: default;
+      transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease;
+      background: transparent;
+      border: none;
+      position: relative;
+      min-height: 26px;
+      text-align: left;
+    }
+    .feature-list li:hover {
+      transform: scale(1.06) translateY(-2px);
+      box-shadow: 0 12px 40px rgba(0,0,0,.3), 0 0 30px rgba(168,85,247,.08);
+    }
+    .feature-list li .icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: rgba(168,85,247,.4);
+      color: #c4b5fd;
+      font-size: 9px;
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+      font-weight: 700;
+    }
+    .feature-list li:hover .icon {
+      transform: scale(1.2);
+      background: rgba(168,85,247,.6);
+      box-shadow: 0 0 20px rgba(168,85,247,.2);
+    }
+    .feature-list li strong { color: #fff; font-weight: 600; }
+
+    /* hero card */
+    .hero-card {
+      position: relative;
+      min-height: 720px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: radial-gradient(circle at 65% 18%, var(--accent-1), transparent 25%),
+                  linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--bg-card);
+      border: 1px solid rgba(255,255,255,.08);
+      box-shadow: 0 24px 70px rgba(0,0,0,.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 28px;
+      isolation: isolate;
+    }
+    .hero-card::before {
+      content: "";
+      position: absolute;
+      width: 320px;
+      height: 320px;
+      right: -70px;
+      top: -40px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(124,58,237,.45), transparent 60%);
+      opacity: .9;
+      z-index: 0;
+    }
+    .hero-card::after {
+      content: "";
+      position: absolute;
+      width: 460px;
+      height: 460px;
+      left: -120px;
+      bottom: -150px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(168,85,247,.10), transparent 60%);
+      opacity: .5;
+      z-index: 0;
+    }
+    .pattern-ring {
+      position: absolute;
+      inset: 34px;
+      border-radius: 28px;
+      border: 1px solid rgba(255,255,255,.05);
+      background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.02), transparent 42%),
+                  repeating-radial-gradient(circle at 50% 50%, rgba(168,85,247,.03) 0 2px, transparent 2px 24px);
+      opacity: .42;
+      z-index: 0;
+    }
+    .logo-wrap {
+      position: relative;
+      z-index: 4;
+      display: flex;
+      justify-content: center;
+      width: 100%;
+      padding: 20px 0 0 0;
+      margin-bottom: 60px;
+    }
+    .logo-orbit {
+      position: relative;
+      width: min(280px, 55%);
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      animation: logo-breathe 4.8s ease-in-out infinite;
+    }
+    .logo-frame {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 1px solid rgba(168,85,247,.25);
+      box-shadow: 0 25px 60px rgba(0,0,0,.52), 0 0 35px rgba(124,58,237,.20), 0 0 80px rgba(99,102,241,.18);
+      background: #000;
+      animation: logo-core-breathe 4.8s ease-in-out infinite;
+    }
+    .logo-frame img { width: 100%; height: 100%; object-fit: cover; }
+    .orbit-path {
+      position: absolute;
+      inset: -18px;
+      border-radius: 50%;
+      border: 1px solid rgba(168,85,247,.12);
+      box-shadow: inset 0 0 16px rgba(124,58,237,.05), 0 0 16px rgba(124,58,237,.06);
+      z-index: 1;
+      pointer-events: none;
+    }
+    .trail-ring {
+      position: absolute;
+      inset: -18px;
+      border-radius: 50%;
+      z-index: 5;
+      pointer-events: none;
+      animation: orbit-spin 6.8s linear infinite;
+      filter: blur(.15px);
+    }
+    .trail-ring::before,
+    .trail-ring::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+    }
+    .trail-ring::before {
+      background: conic-gradient(from 0deg, rgba(0,0,0,0) 0deg, rgba(0,0,0,0) 188deg, rgba(10,13,18,0) 208deg, rgba(99,102,241,.10) 224deg, rgba(168,85,247,.30) 242deg, rgba(196,181,253,.92) 260deg, rgba(168,85,247,.58) 282deg, rgba(99,102,241,.18) 304deg, rgba(10,13,18,0) 322deg, rgba(0,0,0,0) 360deg);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 9px));
+      mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 9px));
+      filter: blur(1px);
+      opacity: .92;
+    }
+    .trail-ring::after {
+      background: conic-gradient(from 8deg, rgba(0,0,0,0) 0deg, rgba(0,0,0,0) 198deg, rgba(99,102,241,0) 214deg, rgba(124,58,237,.06) 232deg, rgba(196,181,253,.38) 248deg, rgba(255,255,255,.70) 260deg, rgba(168,85,247,.20) 276deg, rgba(99,102,241,.06) 292deg, rgba(0,0,0,0) 312deg, rgba(0,0,0,0) 360deg);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 18px), #000 calc(100% - 15px), #000 calc(100% - 11px), transparent calc(100% - 8px));
+      mask: radial-gradient(farthest-side, transparent calc(100% - 18px), #000 calc(100% - 15px), #000 calc(100% - 11px), transparent calc(100% - 8px));
+      filter: blur(5px);
+      opacity: .68;
+    }
+    @keyframes orbit-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes logo-breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.016); } }
+    @keyframes logo-core-breathe {
+      0%,100% { transform: scale(1); box-shadow: 0 25px 60px rgba(0,0,0,.52), 0 0 35px rgba(124,58,237,.18), 0 0 70px rgba(99,102,241,.15); }
+      50% { transform: scale(1.03); box-shadow: 0 30px 72px rgba(0,0,0,.58), 0 0 48px rgba(168,85,247,.24), 0 0 100px rgba(99,102,241,.24); }
+    }
+    .hero-caption {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      padding: 24px 22px 22px;
+      border-radius: 14px;
+      background: rgba(13,17,23,.72);
+      border: 1px solid rgba(255,255,255,.08);
+      backdrop-filter: blur(14px);
+      margin-top: 0;
+    }
+    .hero-caption p {
+      margin: 0 0 14px;
+      color: #b0bdd9;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    .hero-caption .caption-headline {
+      display: block;
+      text-align: center;
+      font-size: clamp(14px, 1.8vw, 20px);
+      font-weight: 600;
+      color: #d3b47b;
+      margin-bottom: 18px;
+      letter-spacing: 0.15em;
+      font-family: 'Inter', sans-serif;
+      text-transform: none;
+    }
+
+    /* ---- SEND FORM BUTTON – inside hero-caption (below the text) ---- */
+    .form-row-caption {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+      margin-top: 4px;
+    }
+    .btn-form-caption {
+      background: linear-gradient(135deg, rgba(46,196,122,.25), rgba(53,224,138,.35));
+      color: #fff;
+      border: 1px solid rgba(53,224,138,.30);
+      box-shadow: 0 16px 40px rgba(0,0,0,.32), 0 0 30px rgba(53,224,138,.16);
+      animation: form-btn-pulse 2.8s ease-in-out infinite;
+      min-height: 46px;
+      padding: 0 28px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      width: 100%;
+    }
+    .btn-form-caption:hover {
+      transform: scale(1.04);
+      box-shadow: 0 22px 48px rgba(0,0,0,.38), 0 0 20px rgba(53,224,138,.10), 0 0 38px rgba(53,224,138,.25), 0 0 70px rgba(46,196,122,.18);
+      border-color: rgba(53,224,138,.40);
+    }
+    @keyframes form-btn-pulse {
+      0%,100% { box-shadow: 0 16px 40px rgba(0,0,0,.32), 0 0 30px rgba(53,224,138,.16); }
+      50% { box-shadow: 0 16px 40px rgba(0,0,0,.32), 0 0 50px rgba(53,224,138,.30), 0 0 80px rgba(46,196,122,.20); }
+    }
+
+    /* ----- bottom row: button stack (removed send form from here) ----- */
+    /* ---- button stack (light line) ---- */
+    .button-stack {
+      margin-top: 16px;
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      max-width: 100%;
+      padding: 8px 10px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(168,85,247,.20);
+      box-shadow: 0 18px 44px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.06);
+      backdrop-filter: blur(10px);
+      position: relative;
+      overflow: hidden;
+      min-height: 60px;
+      animation: button-stack-glow 3.2s ease-in-out infinite;
+    }
+    .button-stack::before {
+      content: "";
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 8px;
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(10,13,18,0) 0%, rgba(168,85,247,.45) 18%, rgba(196,181,253,.98) 50%, rgba(168,85,247,.45) 82%, rgba(10,13,18,0) 100%);
+      box-shadow: 0 0 10px rgba(168,85,247,.26), 0 0 18px rgba(124,58,237,.20), 0 0 34px rgba(99,102,241,.18);
+      animation: button-stack-line-move 3.2s ease-in-out infinite;
+      z-index: 1;
+    }
+    .button-stack::after {
+      content: "";
+      position: absolute;
+      width: 34%;
+      height: 14px;
+      left: -10%;
+      bottom: 2px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(196,181,253,.85) 0%, rgba(168,85,247,.40) 35%, rgba(99,102,241,0) 72%);
+      filter: blur(8px);
+      opacity: .95;
+      animation: button-stack-light-sweep 3.2s ease-in-out infinite;
+      z-index: 1;
+      pointer-events: none;
+    }
+    @keyframes button-stack-glow {
+      0%,100% { box-shadow: 0 18px 44px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.06); }
+      50% { box-shadow: 0 18px 44px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.06), 0 0 40px rgba(168,85,247,.15), 0 0 80px rgba(99,102,241,.10); }
+    }
+    @keyframes button-stack-line-move { 0%,100% { opacity: .82; transform: scaleX(.94); } 50% { opacity: 1; transform: scaleX(1); } }
+    @keyframes button-stack-light-sweep {
+      0% { left: -12%; opacity: .15; transform: scaleX(.72); }
+      18% { opacity: .95; }
+      50% { left: 33%; opacity: 1; transform: scaleX(1); }
+      82% { opacity: .88; }
+      100% { left: 78%; opacity: .10; transform: scaleX(.78); }
+    }
+    .button-stack .left-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 2;
+      flex-shrink: 0;
+    }
+    .button-stack .left-section .brand-logo-small {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 1px solid rgba(168,85,247,.25);
+      flex-shrink: 0;
+    }
+    .button-stack .left-section .brand-logo-small img { width: 100%; height: 100%; object-fit: cover; }
+    .button-stack .left-section .info-text { display: flex; flex-direction: column; }
+    .button-stack .left-section .info-text .name { font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; color: #fff; letter-spacing: .01em; }
+    .button-stack .left-section .info-text .time { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #7c8aa8; letter-spacing: .08em; text-transform: uppercase; opacity: .8; }
+    .button-stack .right-section {
+      display: flex;
+      gap: 6px;
+      z-index: 2;
+      flex-wrap: nowrap;
+    }
+    .button-stack .right-section .btn {
+      flex: none;
+      min-height: 30px;
+      padding: 4px 10px;
+      font-size: 11px;
+      letter-spacing: .02em;
+    }
+
+    /* ----- responsive ----- */
+    @media (max-width: 980px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .button-stack { align-self: stretch; }
+      .hero-card { min-height: 520px; }
+      .logo-orbit { width: min(240px, 50%); }
+      .logo-wrap { margin-bottom: 50px; }
+      .eyebrow-premium { font-size: clamp(16px, 2vw, 22px); padding: 12px 28px 18px; letter-spacing: 0.12em; }
+      .feature-list { max-width: 100%; }
+    }
+    @media (max-width: 768px) {
+      .button-stack {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+        padding: 16px 20px;
+        border-radius: 14px;
+        max-width: 100%;
+      }
+      .button-stack .left-section {
+        justify-content: center;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255,255,255,.06);
+      }
+      .button-stack .right-section { justify-content: center; }
+      .button-stack .right-section .btn {
+        width: 100%;
+        justify-content: center;
+        flex: 1;
+        min-width: 120px;
+      }
+      .btn-form-caption { width: 100%; max-width: 100%; }
+      .hero-card { min-height: 480px; }
+      .logo-orbit { width: min(180px, 40%); }
+      .logo-wrap { margin-bottom: 40px; }
+      .hero-caption p { font-size: 13px; }
+      .eyebrow-premium { font-size: clamp(14px, 1.8vw, 20px); padding: 10px 20px 14px; letter-spacing: 0.10em; }
+      .feature-list { grid-template-columns: 1fr 1fr; gap: 4px 10px; max-width: 100%; }
+      .feature-list li { font-size: 12px; padding: 4px 6px; }
+    }
+    @media (max-width: 500px) {
+      .button-stack .right-section { flex-direction: column; width: 100%; }
+      .button-stack .right-section .btn { width: 100%; }
+      .btn-form-caption { width: 100%; max-width: 100%; }
+      .hero-card { min-height: 400px; padding: 16px; }
+      .logo-orbit { width: min(140px, 35%); }
+      .logo-wrap { margin-bottom: 30px; padding-top: 12px; }
+      .hero-caption { padding: 16px 14px; }
+      .hero-caption p { font-size: 12px; line-height: 1.6; }
+      .eyebrow-premium { font-size: clamp(12px, 1.6vw, 16px); padding: 8px 14px 12px; letter-spacing: 0.08em; border-radius: 20px; }
+      .eyebrow-premium::before { left: 12px; right: 12px; bottom: 6px; }
+      .eyebrow-premium::after { height: 12px; }
+      .feature-list { grid-template-columns: 1fr; gap: 3px 0; max-width: 100%; }
+      .feature-list li { font-size: 11.5px; padding: 3px 6px; min-height: 22px; }
+      .hero-copy { font-size: 14px; max-width: 100%; }
+    }
+    @media (max-width: 640px) {
+      .container { width: min(100% - 24px, 1160px); }
+      .hero { padding-top: 40px; }
+      h1 { max-width: 10ch; }
+      .orbit-path, .trail-ring { inset: -14px; }
+      .cursor-glow { display: none; }
+      .btn:hover { transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .logo-orbit, .logo-frame, .trail-ring, .button-stack,
+      .button-stack::before, .button-stack::after, .eyebrow-premium,
+      .eyebrow-premium::before, .eyebrow-premium::after, .btn-form-caption,
+      .feature-list li:hover { transform: none !important; }
+      .cursor-glow { display: none; }
+      .btn, .btn:hover { transition: none; transform: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- terminal grid backdrop -->
+  <div class="bg-grid" aria-hidden="true">
+    <div class="scan-line"></div>
+  </div>
+
+  <!-- cursor -->
+  <div class="cursor-glow" aria-hidden="true"></div>
+
+  <!-- nav -->
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="#top">
+        <span class="brand-logo">
+          <img src="./assets/images/logo.jpg" alt="Hey Solo logo" width="46" height="46" />
+        </span>
+        <span class="brand-text">
+          <small>Sponsored By</small>
+          <strong>Hey Solo</strong>
+        </span>
+      </a>
+    </div>
+  </header>
+
+  <!-- main -->
+  <main id="top">
+    <section class="hero">
+      <div class="container">
+
+        <div class="hero-grid">
+          <!-- left col -->
+          <div class="left-col">
+            <span class="eyebrow eyebrow-premium">Advance Trade Management</span>
+
+            <ul class="feature-list">
+              <li><span class="icon">✦</span> <strong>Smart Risk Management</strong> — 3 modes (Fixed $, %, Fixed Lot)</li>
+              <li><span class="icon">✦</span> <strong>Stop Loss Protection</strong> — Auto risk reduction after max SL</li>
+              <li><span class="icon">✦</span> <strong>Daily/Weekly Limits</strong> — Loss & profit targets</li>
+              <li><span class="icon">✦</span> <strong>3-Level Trailing Stop</strong> — Fully customizable</li>
+              <li><span class="icon">✦</span> <strong>Breakeven & Partial Exit</strong> — 3-level close with %</li>
+              <li><span class="icon">✦</span> <strong>Full Position Panel</strong> — Close, TP, BE, TS, Partial</li>
+              <li><span class="icon">✦</span> <strong>Telegram Integration</strong> — Reports with screenshots</li>
+              <li><span class="icon">✦</span> <strong>Checklist & Bias</strong> — Discipline before every trade</li>
+              <li><span class="icon">✦</span> <strong>News Filter</strong> — Auto block during high-impact news</li>
+              <li><span class="icon">✦</span> <strong>Session Control</strong> — London/New York only trading</li>
+              <li><span class="icon">✦</span> <strong>Daily Trade Limit</strong> — Max trades per day</li>
+              <li><span class="icon">✦</span> <strong>Session Trade Limit</strong> — Max per session (LN/NY)</li>
+              <li><span class="icon">✦</span> <strong>Floating Risk Limit</strong> — Max concurrent risk %/$</li>
+              <li><span class="icon">✦</span> <strong>Daily Risk Limit</strong> — Max loss per day %/$</li>
+              <li><span class="icon">✦</span> <strong>Fast Scalp Panel</strong> — One-click trading with adjustable SL</li>
+              <li><span class="icon">✦</span> <strong>Prop Account Display</strong> — Real-time metrics (DD, Consistency, etc.)</li>
+              <li><span class="icon">✦</span> <strong>Cooldown & Streak Protection</strong> — Pause after losses</li>
+              <li><span class="icon">✦</span> <strong>Anti-Hedge</strong> — Prevent opposite positions</li>
+              <li><span class="icon">✦</span> <strong>Commission & Spread Adjust</strong> — Auto risk adjustment</li>
+            </ul>
+
+            <p class="hero-copy">
+              <strong>Hey Solo — The Ultimate Free Trade Management System</strong><br><br>
+
+              Imagine having a professional risk manager watching your trades 24/7, automatically adjusting stop-losses, securing profits with trailing stops, and never letting a single trade break your rules. That's exactly what Hey Solo delivers — and it's completely FREE.<br><br>
+
+              From smart position sizing with 3 risk modes (Fixed Dollar, Percentage of Balance, Fixed Lot) to 3-level trailing stops, breakeven activation, and partial exits with customizable percentages — Hey Solo handles every aspect of risk and trade management with surgical precision. You simply focus on your analysis, and the EA executes with discipline.<br><br>
+
+              But it doesn't stop there. Hey Solo includes a full position panel for managing multiple trades, real-time Telegram notifications with screenshots, daily/weekly loss and profit limits, session-based trading controls, news filters, and even a prop-account dashboard that tracks your drawdown, consistency score, and challenge progress in real-time.<br><br>
+
+              Whether you're a scalper needing one-click execution with adjustable SL, a swing trader wanting to protect profits with trailing stops, or a prop-firm challenger managing daily loss limits — Hey Solo adapts to your style. Best of all? It's free, open to all traders, and backed by a responsive team ready to help you master it.<br><br>
+
+              <strong>Download it today and experience trading the way it was meant to be — stress-free, disciplined, and consistently profitable.</strong>
+            </p>
+          </div>
+
+          <!-- right col -->
+          <div class="right-col">
+            <div class="hero-card">
+              <div class="pattern-ring"></div>
+
+              <div class="logo-wrap">
+                <div class="logo-orbit">
+                  <div class="orbit-path"></div>
+                  <div class="logo-frame">
+                    <img src="./assets/images/logo.jpg" alt="Hey Solo sponsor logo" width="640" height="640" />
+                  </div>
+                  <div class="trail-ring" aria-hidden="true"></div>
+                </div>
+              </div>
+
+              <div class="hero-caption">
+
+                <span class="caption-headline">Why we built Hey Solo — and why it matters.</span>
+
+                <p>
+                  Trading isn't about having the best strategy — it's about executing that strategy without hesitation, fear, or greed. Studies show that 80% of trading failures come from psychological mistakes: moving stop-losses out of fear, closing winners too early, revenge trading after losses, or simply breaking your own rules in the heat of the moment.<br><br>
+
+                  We built Hey Solo to eliminate these emotional traps entirely. By automating every aspect of risk and trade management — from position sizing to stop-loss placement, trailing stops, and partial exits — the EA ensures that your plan is executed exactly as intended, every single time, regardless of how you feel.<br><br>
+
+                  But we went further. We added layers of protection: daily loss limits, weekly loss caps, consecutive loss detection, cool-down periods, and even floating risk limits that prevent you from overexposing your account. It's like having a professional risk manager sitting next to you, quietly ensuring you never blow up your account.<br><br>
+
+                  And here's the beautiful part: you don't have to do it alone. Whether you use Hey Solo as your personal EA or delegate your account to the Hey Solo team for full risk management, you trade with peace of mind. The machine handles the stress, the math, and the discipline — while you focus on what truly matters: making clear, confident trading decisions.<br><br>
+
+                  <strong>Trade with clarity. Delegate the risk. Let Hey Solo handle the rest.</strong>
+                </p>
+
+                <div class="form-row-caption">
+                  <a class="btn-form-caption" href="https://t.me/HeySoloATM?direct" target="_blank" rel="noopener noreferrer">
+                    ✦ Send Form
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div class="button-stack">
+              <div class="left-section">
+                <div class="brand-logo-small">
+                  <img src="./assets/images/logo.jpg" alt="Hey Solo" width="40" height="40" />
+                </div>
+                <div class="info-text">
+                  <span class="name">Hey Solo</span>
+                  <span class="time">24/7 Support</span>
+                </div>
+              </div>
+              <div class="right-section">
+                <a class="btn btn-download" href="/download">
+                  Download HeySolo
+                </a>
+                <a class="btn btn-secondary" href="https://t.me/HeySoloATM" target="_blank" rel="noopener noreferrer">
+                  Support
+                </a>
+                <a class="btn btn-secondary" href="https://youtube.com/playlist?list=PLLfB5DDJ94MHqL-0YCl3eoxfV1i8y2ip8&si=v-A-FKymBjPvzdj1" target="_blank" rel="noopener noreferrer">
+                  Tutorials
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function() {
+      const root = document.documentElement;
+      const cursorGlow = document.querySelector('.cursor-glow');
+      const buttons = document.querySelectorAll('.btn');
+      const isReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const isTouch = window.matchMedia('(hover: none), (pointer: coarse)').matches;
+
+      let mouseX = window.innerWidth * 0.5;
+      let mouseY = window.innerHeight * 0.5;
+      let currentX = mouseX;
+      let currentY = mouseY;
+
+      function updateMouseVars(x, y) {
+        root.style.setProperty('--mouse-x', x + 'px');
+        root.style.setProperty('--mouse-y', y + 'px');
+      }
+
+      const audio = new Audio('./assets/audio/hey_solo_vibe.ogg');
+      if (audio) {
+        audio.volume = 0.1;
+        audio.loop = false;
+        const tryPlay = () => { audio.play().catch(() => {}); };
+        window.addEventListener('load', tryPlay, { once: true });
+        document.addEventListener('click', tryPlay, { once: true });
+        document.addEventListener('touchstart', tryPlay, { once: true });
+        document.addEventListener('keydown', tryPlay, { once: true });
+      }
+
+      if (!isReduced && !isTouch) {
+        window.addEventListener('mousemove', (e) => {
+          mouseX = e.clientX;
+          mouseY = e.clientY;
+        });
+
+        function animateCursor() {
+          currentX += (mouseX - currentX) * 0.16;
+          currentY += (mouseY - currentY) * 0.16;
+          updateMouseVars(currentX, currentY);
+          requestAnimationFrame(animateCursor);
+        }
+        animateCursor();
+
+        buttons.forEach((button) => {
+          button.addEventListener('mousemove', (e) => {
+            const rect = button.getBoundingClientRect();
+            const relX = e.clientX - rect.left;
+            const relY = e.clientY - rect.top;
+            button.style.setProperty('--glow-x', `${(relX / rect.width) * 100}%`);
+            button.style.setProperty('--glow-y', `${(relY / rect.height) * 100}%`);
+            button.classList.add('is-hovered');
+            cursorGlow.classList.add('is-over-button');
+          });
+          button.addEventListener('mouseenter', () => {
+            button.classList.add('is-hovered');
+            cursorGlow.classList.add('is-over-button');
+          });
+          button.addEventListener('mouseleave', () => {
+            button.classList.remove('is-hovered');
+            cursorGlow.classList.remove('is-over-button');
+          });
+          button.addEventListener('focus', () => button.classList.add('is-hovered'));
+          button.addEventListener('blur', () => button.classList.remove('is-hovered'));
+        });
+      } else {
+        updateMouseVars(mouseX, mouseY);
+      }
+    })();
+  </script>
+
+</body>
+</html>

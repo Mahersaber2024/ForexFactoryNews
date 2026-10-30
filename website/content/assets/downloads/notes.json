@@ -1,0 +1,232 @@
+{
+ "HeySolo[ATM]": {
+  "4.6": [
+   "<b>New: Price Alert tool</b>: a new alarm-clock button in the drawing tools. Press it, then click on the chart to place an alert line (drag it up or down to change the price; its label stays at the right edge of the chart on any timeframe and zoom). When price crosses the line the alert rings with a different sound for up and for down, shows a message on the chart and the line is removed (each alert fires once)",
+   "<b>Price alerts in Telegram</b>: every alert is also sent to a new \"Alerts\" topic that is created automatically in your group. It only depends on Send Via, so it works even when Send Trade, Logs and Result are off. With SEND PY BOT / BRIDGE EA the EA only writes the file",
+   "<b>New: Split Orders</b>: set a number from 1 to 5 in the settings panel (right under the TP risk-to-reward ratio) and your risk is divided equally across that many orders. Each next order gets its TP 0.2R further, so the targets do not sit on top of each other. 1 = off (default). The number of orders is never more than the broker's minimum lot allows",
+   "<b>Split orders count as ONE trade</b>: Break Even and Trailing, Max Open Trades, Trades per Day and the SL counters count the whole group once. The R ladder shows once with the total volume and P/L, and the close log and Journal show one trade with the total result instead of one per order",
+   "<b>New: HeySolo Bridge support</b>: set Send Via = SEND PY BOT / BRIDGE EA and the separate HeySolo Bridge tool (attach it once on any spare chart) handles Telegram messages, dashboard data and remote settings. Hey Solo ATM only writes files and never touches the network in this mode, so a weak connection can no longer slow your trades",
+   "<b>Ticket numbers in Telegram</b>: manual-entry messages (also when several orders are opened at once), close logs and result messages now show the Position / Order ticket",
+   "<b>Manual entry fix</b>: the Telegram message for a manual entry now shows the TP that was really sent with the order (it always showed 0 before)",
+   "<b>Dashboard data without Journal or Prop panel</b>: when Send Via uses the Bridge, the account files are exported automatically every 15 seconds on live accounts, so the dashboard works even with Journal and Prop panel off",
+   "<b>Yesterday's trades</b> are now included in the dashboard data",
+   "The Send Via option is renamed to \"SEND PY BOT / BRIDGE EA\" to make the choice clear",
+   "<b>One helper file</b>: all include files are now merged into a single HeySolo_ATM_Helper.mqh (Replay Broker, Trade Journal and shared types). HeySolo [ATM] no longer needs Hey_Solo_Journal.mqh or ReplayBroker.mqh. This only matters if you compile from source; the ready-made build is unchanged"
+  ],
+  "4.3": [
+   "<b>New: Use Remaining Floating Risk</b>: when Max Floating Risk is reached, the EA can now enter with the floating risk that is still left (lot size is reduced to fit) instead of skipping the trade. Turn it on in the settings panel, right under Max Floating Risk. It is off by default",
+   "<b>Add Spread to SL (Sell)</b>: for Sell trades the spread is now added to the SL price itself, so your stop is no longer hit early by the spread. The option and the Running panel row were renamed to make this clear",
+   "Clearer setting names: \"Percentage\" and \"Risk Based on Balance/Equity\" replace the older risk labels"
+  ],
+  "4.2": [
+   "<b>New: R-multiple ladder</b>: every open trade shows 1R, 2R, 3R... lines above its entry (1R = distance from entry to your original stop), and the ENTRY label updates live with the current R and floating P/L. It appears the moment a trade opens and is cleaned up when it closes. Choose how many levels to show (1-20), show or hide the profit value, and display it in dollars or % of balance",
+   "<b>Journal strategy moved into the Hey Solo panel</b>: switch the strategy for your next trade with the < > buttons and add a new one by typing its name and pressing Add, all inside the settings panel. The separate Journal button is gone",
+   "<b>Partial exit fixed</b>: it now closes exactly the percentage you set with a real partial close, a level is marked as done only after the close really succeeded (otherwise it retries on the next tick), R is measured from your original SL, and small volumes round to the broker's minimum lot without leaving a remainder that can't be closed",
+   "<b>Trailing stop fixed</b>: R is always measured from the original SL (not from an SL that was already moved), each level places the SL at your \"Put SL\" distance from the entry once its start level is reached, and the SL is never moved backwards",
+   "<b>SL protection (risk cut) fixes</b>: the risk cut now counts SLs correctly, also triggers from SLs that already happened today (after an EA restart or a settings change), uses the same % formula everywhere, and old losses no longer inflate the recovery target. The Running panel shows a new \"Risk restores at\" row with the balance level that brings risk back to full",
+   "<b>Session limits</b> now work when only London or only New York is set, and lot sizing keeps a 2% free-margin safety buffer so orders are not rejected for margin",
+   "<b>Daily limits</b>: SL counters are re-synced from history at the start of a new day, and daily stats use the same day start everywhere. The last processed deal is now saved in full range and its file is always closed, so limit state is stored reliably",
+   "<b>Replay / Tester compatibility</b>: news filter and Footprint switch off automatically in the Strategy Tester and replay, the timer is lighter on replay charts, dashboard export runs on real time, and panel settings stay tied to your real account",
+   "<b>Panel improvements</b>: counts and limits can no longer go negative (typed or with the - button), the Running panel refreshes on every trade event, and the settings file is created automatically if it is missing",
+   "Dragging SL/TP lines is smoother and no longer jumps, drawing tools always use the color you picked, and extra log noise was reduced"
+  ],
+  "4.0": [
+   "<b>New: Trade Journal</b>: every trade is recorded automatically with open/close chart screenshots and auto tags, and synced to the web dashboard. Pick a strategy per trade and add new strategies straight from the Journal panel",
+   "<b>New: SL/TP lines on open positions</b>: every open position now shows its entry, SL and TP lines on the chart. Double-click and drag a line to change SL or TP",
+   "<b>New: Seconds / custom chart trading</b>: trade from custom (e.g. seconds) charts. Orders go to the real broker symbol, which is detected automatically or set with the new ExecutionSymbol input",
+   "<b>New: Drawing tool color picker</b>: choose the color of the drawing tools from a palette (it used to be random)",
+   "<b>Telegram topics</b>: Trade, Result and Logs forum topics are now created automatically in your group, no need to enter topic IDs by hand",
+   "News filter now checks each trade against its own symbol's currencies",
+   "The trade-close screenshot is shared with the Journal, so no duplicate files",
+   "Removed: the \"Prop Web\" option (replaced by the Trade Journal web sync)"
+  ],
+  "3.8": [
+   "<b>Fast execution</b> with Fixed Dollar, % of Balance or Fixed Lot risk, commission/spread handling and a confirm-before-entry option",
+   "<b>Trade panel & Fast Scalp panel</b> with entry, SL and TP lines you can drag on the chart",
+   "<b>Risk limits</b>: max daily/weekly loss, daily profit target, total target, max floating risk, with auto-close of positions and pending orders",
+   "<b>Trade limits</b>: max open trades (total / per symbol), trades per day, per NY/London session, cooldown after SL or any close, hedge blocking, and risk cut or pause after a losing streak",
+   "<b>Partial exit, breakeven and trailing stop</b>, each with up to 3 levels (R:R or points)",
+   "<b>Reverse on SL</b>: automatically places an opposite trade when SL is hit, with a max-streak limit",
+   "<b>News filter</b>: blocks trading around high-impact news and specific events you choose",
+   "<b>Session filter</b>: trade only in London / New York sessions, plus a liquidity block around 9:30 NY",
+   "<b>Prop account panel</b>: challenge target, daily/total drawdown, consistency score, trading-day tracking",
+   "<b>Telegram reports</b>: send trades, results (with screenshot) and logs to your Telegram",
+   "<b>Pre-trade checklist</b>, Running status panel and a full in-chart settings panel with saved presets"
+  ],
+  "current": [
+   "<b>New: Price Alert tool</b>: a new alarm-clock button in the drawing tools. Press it, then click on the chart to place an alert line (drag it up or down to change the price; its label stays at the right edge of the chart on any timeframe and zoom). When price crosses the line the alert rings with a different sound for up and for down, shows a message on the chart and the line is removed (each alert fires once)",
+   "<b>Price alerts in Telegram</b>: every alert is also sent to a new \"Alerts\" topic that is created automatically in your group. It only depends on Send Via, so it works even when Send Trade, Logs and Result are off. With SEND PY BOT / BRIDGE EA the EA only writes the file",
+   "<b>New: Split Orders</b>: set a number from 1 to 5 in the settings panel (right under the TP risk-to-reward ratio) and your risk is divided equally across that many orders. Each next order gets its TP 0.2R further, so the targets do not sit on top of each other. 1 = off (default). The number of orders is never more than the broker's minimum lot allows",
+   "<b>Split orders count as ONE trade</b>: Break Even and Trailing, Max Open Trades, Trades per Day and the SL counters count the whole group once. The R ladder shows once with the total volume and P/L, and the close log and Journal show one trade with the total result instead of one per order",
+   "<b>New: HeySolo Bridge support</b>: set Send Via = SEND PY BOT / BRIDGE EA and the separate HeySolo Bridge tool (attach it once on any spare chart) handles Telegram messages, dashboard data and remote settings. Hey Solo ATM only writes files and never touches the network in this mode, so a weak connection can no longer slow your trades",
+   "<b>Ticket numbers in Telegram</b>: manual-entry messages (also when several orders are opened at once), close logs and result messages now show the Position / Order ticket",
+   "<b>Manual entry fix</b>: the Telegram message for a manual entry now shows the TP that was really sent with the order (it always showed 0 before)",
+   "<b>Dashboard data without Journal or Prop panel</b>: when Send Via uses the Bridge, the account files are exported automatically every 15 seconds on live accounts, so the dashboard works even with Journal and Prop panel off",
+   "<b>Yesterday's trades</b> are now included in the dashboard data",
+   "The Send Via option is renamed to \"SEND PY BOT / BRIDGE EA\" to make the choice clear",
+   "<b>One helper file</b>: all include files are now merged into a single HeySolo_ATM_Helper.mqh (Replay Broker, Trade Journal and shared types). HeySolo [ATM] no longer needs Hey_Solo_Journal.mqh or ReplayBroker.mqh. This only matters if you compile from source; the ready-made build is unchanged"
+  ],
+  "fa": {
+   "4.6": [
+    "<b>جدید: ابزار هشدار قیمت</b>: یک دکمه جدید (ساعت زنگ‌دار) در ابزارهای ترسیم. روی آن بزنید و سپس روی چارت کلیک کنید تا یک خط هشدار گذاشته شود (با کشیدن به بالا و پایین قیمتش را عوض کنید؛ برچسب آن در هر تایم‌فریم و زومی کنار لبه راست چارت می‌ماند). وقتی قیمت از خط رد شود، هشدار با صدای متفاوت برای رد شدن به بالا و به پایین پخش می‌شود، پیامی روی چارت نشان می‌دهد و خط حذف می‌شود (هر هشدار فقط یک بار فعال می‌شود)",
+    "<b>هشدار قیمت در تلگرام</b>: هر هشدار به یک تاپیک جدید «Alerts» هم ارسال می‌شود که خودکار در گروه شما ساخته می‌شود. این فقط به گزینه Send Via بستگی دارد، پس حتی با خاموش بودن ارسال معاملات، لاگ و نتیجه هم کار می‌کند. در حالت SEND PY BOT / BRIDGE EA اکسپرت فقط فایل می‌نویسد",
+    "<b>جدید: Split Orders</b>: در پنل تنظیمات (درست زیر نسبت ریسک به ریوارد TP) عددی از ۱ تا ۵ بگذارید تا ریسک شما به‌طور مساوی بین همان تعداد سفارش تقسیم شود. TP هر سفارش بعدی ۰.۲R دورتر قرار می‌گیرد تا هدف‌ها روی هم نیفتند. عدد ۱ یعنی خاموش (پیش‌فرض). تعداد سفارش‌ها هرگز بیشتر از چیزی که حداقل لات بروکر اجازه می‌دهد نمی‌شود",
+    "<b>Split Orders یک معامله حساب می‌شود</b>: بریک‌ایون و تریلینگ، حداکثر معاملات باز، معاملات روزانه و شمارنده SL کل گروه را یک بار می‌شمارند. نردبان R یک بار با حجم و سود/زیان کل نمایش داده می‌شود و لاگ بسته شدن و ژورنال به‌جای یک مورد برای هر سفارش، یک معامله با نتیجه کل نشان می‌دهند",
+    "<b>جدید: پشتیبانی از HeySolo Bridge</b>: گزینه Send Via را روی SEND PY BOT / BRIDGE EA بگذارید تا ابزار جداگانه HeySolo Bridge (فقط یک بار روی یک چارت اضافه نصب می‌شود) پیام‌های تلگرام، داده‌های داشبورد و تغییر تنظیمات از راه دور را انجام دهد. Hey Solo ATM در این حالت فقط فایل می‌نویسد و به شبکه دست نمی‌زند، پس اینترنت ضعیف دیگر معاملات را کند نمی‌کند",
+    "<b>شماره تیکت در تلگرام</b>: پیام ورود دستی (حتی با چند سفارش همزمان)، لاگ بسته شدن و پیام نتیجه حالا شماره تیکت پوزیشن / سفارش را نشان می‌دهند",
+    "<b>رفع باگ ورود دستی</b>: پیام تلگرام ورود دستی حالا TP واقعی ارسال‌شده را نشان می‌دهد (قبلاً همیشه ۰ بود)",
+    "<b>داده داشبورد بدون نیاز به ژورنال یا پنل پراپ</b>: وقتی Send Via روی Bridge باشد، فایل‌های حساب روی حساب زنده خودکار و هر ۱۵ ثانیه خروجی گرفته می‌شوند، پس داشبورد حتی با خاموش بودن ژورنال و پنل پراپ هم کار می‌کند",
+    "<b>معاملات دیروز</b> هم به داده‌های داشبورد اضافه شد",
+    "نام گزینه Send Via به «SEND PY BOT / BRIDGE EA» تغییر کرد تا انتخاب روشن‌تر باشد",
+    "<b>یک فایل کمکی به‌جای چند فایل</b>: همه فایل‌های include حالا در یک فایل HeySolo_ATM_Helper.mqh ادغام شده‌اند (ریپلی بروکر، ژورنال معاملات و تایپ‌های مشترک). HeySolo [ATM] دیگر به Hey_Solo_Journal.mqh و ReplayBroker.mqh نیاز ندارد. این فقط برای کامپایل از روی سورس مهم است و نسخه آماده تغییری ندارد"
+   ],
+   "4.3": [
+    "<b>جدید: استفاده از ریسک شناور باقی‌مانده</b>: وقتی به حداکثر ریسک شناور می‌رسید، اکسپرت می‌تواند به‌جای رد کردن معامله، با ریسک شناوری که هنوز باقی مانده وارد شود (حجم به‌اندازه کم می‌شود). آن را در پنل تنظیمات و درست زیر حداکثر ریسک شناور روشن کنید. به‌صورت پیش‌فرض خاموش است",
+    "<b>اضافه کردن اسپرد به SL (فروش)</b>: در معاملات فروش، اسپرد حالا مستقیماً به قیمت SL اضافه می‌شود تا SL شما به‌خاطر اسپرد زودتر نخورد. نام این گزینه و ردیف آن در پنل Running هم برای روشن‌تر شدن تغییر کرد",
+    "نام تنظیمات روشن‌تر شد: «Percentage» و «Risk Based on Balance/Equity» جایگزین برچسب‌های قبلی ریسک شدند"
+   ],
+   "4.2": [
+    "<b>جدید: نردبان R</b>: هر معامله باز خطوط 1R، 2R، 3R و ... را بالای نقطه ورود نمایش می‌دهد (1R برابر فاصله ورود تا SL اولیه شماست) و برچسب ENTRY به‌صورت لحظه‌ای R فعلی و سود/زیان شناور را نشان می‌دهد. نردبان همان لحظه باز شدن معامله ساخته و بعد از بسته شدن پاک می‌شود. تعداد سطوح (۱ تا ۲۰) را انتخاب کنید، نمایش مقدار سود را روشن یا خاموش کنید و آن را به دلار یا درصد موجودی نمایش دهید",
+    "<b>انتخاب استراتژی ژورنال به پنل Hey Solo منتقل شد</b>: استراتژی معامله بعدی را با دکمه‌های < > عوض کنید و با نوشتن نام و زدن Add استراتژی جدید اضافه کنید، همه داخل پنل تنظیمات. دکمه جداگانه Journal حذف شد",
+    "<b>رفع باگ خروج پله‌ای (پارشیال)</b>: حالا دقیقاً درصد تنظیم‌شده با بستن واقعی بخشی از حجم بسته می‌شود، هر سطح فقط بعد از موفق بودن بسته شدن ثبت می‌شود (در غیر این صورت تیک بعدی دوباره تلاش می‌کند)، R از SL اولیه شما محاسبه می‌شود و حجم‌های کوچک به حداقل لات بروکر گرد می‌شوند و باقی‌مانده غیرقابل‌بستن نمی‌ماند",
+    "<b>رفع باگ تریل استاپ</b>: R همیشه از SL اولیه محاسبه می‌شود (نه SL که قبلاً جابه‌جا شده)، هر سطح بعد از رسیدن به نقطه شروعش SL را به‌اندازه «Put SL» از نقطه ورود می‌گذارد و SL هرگز به عقب برنمی‌گردد",
+    "<b>اصلاح‌های محافظت SL (کاهش ریسک)</b>: شمارش SL درست انجام می‌شود، SLهایی که امروز قبلاً خورده‌اند (بعد از ری‌استارت اکسپرت یا تغییر تنظیمات) هم کاهش ریسک را فعال می‌کنند، فرمول درصد در همه جا یکسان است و ضررهای قدیمی دیگر هدف بازیابی را بزرگ نمی‌کنند. در پنل Running ردیف جدید «Risk restores at» سطح بالانسی را نشان می‌دهد که ریسک را به حالت کامل برمی‌گرداند",
+    "<b>محدودیت سشن</b> حالا وقتی فقط لندن یا فقط نیویورک تنظیم شده هم کار می‌کند و محاسبه لات یک حاشیه ایمنی ۲٪ روی مارجین آزاد نگه می‌دارد تا سفارش به‌خاطر مارجین رد نشود",
+    "<b>محدودیت‌های روزانه</b>: شمارنده‌های SL در شروع هر روز جدید از تاریخچه مجدداً همگام می‌شوند و آمار روزانه در همه جا از یک مبدأ شروع روز استفاده می‌کند. آخرین معامله پردازش‌شده هم با بازه کامل ذخیره می‌شود و فایل آن همیشه بسته می‌شود، پس وضعیت محدودیت‌ها پایدار ذخیره می‌شود",
+    "<b>سازگاری با ریپلی / استراتژی تستر</b>: فیلتر اخبار و Footprint در استراتژی تستر و ریپلی خودکار خاموش می‌شوند، تایمر روی چارت ریپلی سبک‌تر است، خروجی داشبورد بر اساس زمان واقعی انجام می‌شود و تنظیمات پنل به حساب واقعی شما وصل می‌ماند",
+    "<b>بهبود پنل‌ها</b>: مقادیر تعداد و محدودیت دیگر منفی نمی‌شوند (چه تایپی و چه با دکمه -)، پنل Running با هر رویداد معامله به‌روز می‌شود و فایل تنظیمات در صورت نبودن خودکار ساخته می‌شود",
+    "جابه‌جایی خطوط SL/TP روان‌تر شد و پرش نمی‌کند، ابزارهای ترسیم همیشه از رنگ انتخاب‌شده شما استفاده می‌کنند و لاگ‌های اضافی کم شد"
+   ],
+   "4.0": [
+    "<b>جدید: ژورنال معاملات</b>: هر معامله به‌صورت خودکار همراه با اسکرین‌شات چارت هنگام باز و بسته شدن و تگ‌های خودکار ثبت می‌شود و با داشبورد وب همگام‌سازی می‌شود. برای هر معامله یک استراتژی انتخاب کنید و استراتژی‌های جدید را مستقیماً از پنل ژورنال اضافه کنید",
+    "<b>جدید: خطوط SL/TP روی پوزیشن‌های باز</b>: حالا هر پوزیشن باز، خطوط ورود، SL و TP خود را روی چارت نمایش می‌دهد. برای تغییر SL یا TP روی خط دوبار کلیک کرده و آن را بکشید",
+    "<b>جدید: معامله روی چارت ثانیه‌ای / سفارشی</b>: از روی چارت‌های سفارشی (مثلاً ثانیه‌ای) معامله کنید. سفارش‌ها به نماد واقعی بروکر ارسال می‌شوند که به‌صورت خودکار شناسایی می‌شود یا با ورودی جدید ExecutionSymbol تنظیم می‌شود",
+    "<b>جدید: انتخاب رنگ ابزار ترسیم</b>: رنگ ابزارهای ترسیم را از یک پالت انتخاب کنید (قبلاً تصادفی بود)",
+    "<b>تاپیک‌های تلگرام</b>: تاپیک‌های Trade، Result و Logs حالا به‌صورت خودکار در گروه شما ساخته می‌شوند و دیگر نیازی به وارد کردن دستی شناسه تاپیک‌ها نیست",
+    "فیلتر اخبار حالا هر معامله را بر اساس ارزهای نماد همان معامله بررسی می‌کند",
+    "اسکرین‌شات بسته شدن معامله با ژورنال مشترک است، بنابراین فایل تکراری ساخته نمی‌شود",
+    "حذف شد: گزینه «Prop Web» (با همگام‌سازی وب ژورنال معاملات جایگزین شد)"
+   ],
+   "3.8": [
+    "<b>اجرای سریع</b> با ریسک دلار ثابت، درصد موجودی یا لات ثابت، محاسبه کمیسیون/اسپرد و گزینه تأیید قبل از ورود",
+    "<b>پنل معامله و پنل اسکالپ سریع</b> با خطوط ورود، SL و TP که می‌توانید روی چارت جابه‌جا کنید",
+    "<b>محدودیت‌های ریسک</b>: حداکثر ضرر روزانه/هفتگی، هدف سود روزانه، هدف کل، حداکثر ریسک شناور، همراه با بستن خودکار پوزیشن‌ها و سفارش‌های معلق",
+    "<b>محدودیت‌های معامله</b>: حداکثر معاملات باز (کل / هر نماد)، تعداد معامله در روز و در هر سشن نیویورک/لندن، زمان استراحت پس از SL یا هر بسته شدن، جلوگیری از هج، و کاهش ریسک یا توقف پس از ضررهای پیاپی",
+    "<b>خروج پله‌ای، سربه‌سر و تریل استاپ</b>، هر کدام با حداکثر ۳ سطح (R:R یا پوینت)",
+    "<b>معکوس روی SL</b>: با خوردن SL به‌صورت خودکار یک معامله در جهت مخالف باز می‌کند، با محدودیت حداکثر تعداد پیاپی",
+    "<b>فیلتر اخبار</b>: معامله در اطراف اخبار پراهمیت و رویدادهای انتخابی شما را مسدود می‌کند",
+    "<b>فیلتر سشن</b>: معامله فقط در سشن‌های لندن / نیویورک، به‌علاوه مسدودسازی نقدینگی در حوالی ساعت ۹:۳۰ نیویورک",
+    "<b>پنل حساب پراپ</b>: هدف چالش، دراوداون روزانه/کل، امتیاز ثبات و پیگیری روزهای معاملاتی",
+    "<b>گزارش‌های تلگرام</b>: ارسال معاملات، نتایج (همراه با اسکرین‌شات) و لاگ‌ها به تلگرام شما",
+    "<b>چک‌لیست قبل از معامله</b>، پنل وضعیت اجرا و پنل کامل تنظیمات روی چارت با پریست‌های ذخیره‌شده"
+   ],
+   "current": [
+    "<b>جدید: ابزار هشدار قیمت</b>: یک دکمه جدید (ساعت زنگ‌دار) در ابزارهای ترسیم. روی آن بزنید و سپس روی چارت کلیک کنید تا یک خط هشدار گذاشته شود (با کشیدن به بالا و پایین قیمتش را عوض کنید؛ برچسب آن در هر تایم‌فریم و زومی کنار لبه راست چارت می‌ماند). وقتی قیمت از خط رد شود، هشدار با صدای متفاوت برای رد شدن به بالا و به پایین پخش می‌شود، پیامی روی چارت نشان می‌دهد و خط حذف می‌شود (هر هشدار فقط یک بار فعال می‌شود)",
+    "<b>هشدار قیمت در تلگرام</b>: هر هشدار به یک تاپیک جدید «Alerts» هم ارسال می‌شود که خودکار در گروه شما ساخته می‌شود. این فقط به گزینه Send Via بستگی دارد، پس حتی با خاموش بودن ارسال معاملات، لاگ و نتیجه هم کار می‌کند. در حالت SEND PY BOT / BRIDGE EA اکسپرت فقط فایل می‌نویسد",
+    "<b>جدید: Split Orders</b>: در پنل تنظیمات (درست زیر نسبت ریسک به ریوارد TP) عددی از ۱ تا ۵ بگذارید تا ریسک شما به‌طور مساوی بین همان تعداد سفارش تقسیم شود. TP هر سفارش بعدی ۰.۲R دورتر قرار می‌گیرد تا هدف‌ها روی هم نیفتند. عدد ۱ یعنی خاموش (پیش‌فرض). تعداد سفارش‌ها هرگز بیشتر از چیزی که حداقل لات بروکر اجازه می‌دهد نمی‌شود",
+    "<b>Split Orders یک معامله حساب می‌شود</b>: بریک‌ایون و تریلینگ، حداکثر معاملات باز، معاملات روزانه و شمارنده SL کل گروه را یک بار می‌شمارند. نردبان R یک بار با حجم و سود/زیان کل نمایش داده می‌شود و لاگ بسته شدن و ژورنال به‌جای یک مورد برای هر سفارش، یک معامله با نتیجه کل نشان می‌دهند",
+    "<b>جدید: پشتیبانی از HeySolo Bridge</b>: گزینه Send Via را روی SEND PY BOT / BRIDGE EA بگذارید تا ابزار جداگانه HeySolo Bridge (فقط یک بار روی یک چارت اضافه نصب می‌شود) پیام‌های تلگرام، داده‌های داشبورد و تغییر تنظیمات از راه دور را انجام دهد. Hey Solo ATM در این حالت فقط فایل می‌نویسد و به شبکه دست نمی‌زند، پس اینترنت ضعیف دیگر معاملات را کند نمی‌کند",
+    "<b>شماره تیکت در تلگرام</b>: پیام ورود دستی (حتی با چند سفارش همزمان)، لاگ بسته شدن و پیام نتیجه حالا شماره تیکت پوزیشن / سفارش را نشان می‌دهند",
+    "<b>رفع باگ ورود دستی</b>: پیام تلگرام ورود دستی حالا TP واقعی ارسال‌شده را نشان می‌دهد (قبلاً همیشه ۰ بود)",
+    "<b>داده داشبورد بدون نیاز به ژورنال یا پنل پراپ</b>: وقتی Send Via روی Bridge باشد، فایل‌های حساب روی حساب زنده خودکار و هر ۱۵ ثانیه خروجی گرفته می‌شوند، پس داشبورد حتی با خاموش بودن ژورنال و پنل پراپ هم کار می‌کند",
+    "<b>معاملات دیروز</b> هم به داده‌های داشبورد اضافه شد",
+    "نام گزینه Send Via به «SEND PY BOT / BRIDGE EA» تغییر کرد تا انتخاب روشن‌تر باشد",
+    "<b>یک فایل کمکی به‌جای چند فایل</b>: همه فایل‌های include حالا در یک فایل HeySolo_ATM_Helper.mqh ادغام شده‌اند (ریپلی بروکر، ژورنال معاملات و تایپ‌های مشترک). HeySolo [ATM] دیگر به Hey_Solo_Journal.mqh و ReplayBroker.mqh نیاز ندارد. این فقط برای کامپایل از روی سورس مهم است و نسخه آماده تغییری ندارد"
+   ]
+  }
+ },
+ "Heysolo-ForwardTester": {
+  "1.1": [
+   "<b>New: Real Ticks mode</b>: choose BARS or REAL TICKS in the panel. REAL TICKS replays every real broker tick instead of one tick per M1 bar, so SL/TP, pending orders and stop-out trigger in the same order they would have happened. It needs tick history for the symbol; if none is found, the replay falls back to M1 bars and prints a warning in the Experts log",
+   "<b>Slower replay speeds</b>: speed now goes from 0.05x to 20x (it was 0.5x to 20x), so you can watch ticks one by one",
+   "<b>Symbol picker</b>: choose the symbol to replay from your Market Watch list inside the panel, with a search box (type part of the name and press Enter)",
+   "<b>ReplayBroker.mqh updated</b>: in REAL TICKS mode the bar that is still forming is followed tick by tick (new high, new low, last price), so your EA sees a realistic live bar. Replace your old copy of the file and recompile your EA",
+   "The replay toolbar now scales only with your screen DPI, so resizing or tiling the main chart no longer shrinks it"
+  ],
+  "1.0": [
+   "<b>First release (Public Beta)</b>: TradingView-style Bar Replay controller for MT5, no inputs, everything lives in the on-chart panel",
+   "<b>Replay toolbar</b>: back, play/pause, step forward, speed control from 0.5x to 20x, and a timeframe switcher, on its own auto-generated replay chart",
+   "<b>Virtual account panel</b>: set starting balance, spread, commission (auto from broker or manual) and how many days of history to load",
+   "<b>ReplayBroker.mqh</b>: an include-only virtual broker. Drop it at the top of any EA (before Trade.mqh) and, on the replay chart, every position, pending order, SL/TP, stop-limit, expiration and stop-out is simulated on a virtual hedging account, while the same EA on a normal chart keeps trading for real, untouched",
+   "Applies your own chart template, and settings are saved and restored automatically"
+  ],
+  "current": [
+   "<b>New: Real Ticks mode</b>: choose BARS or REAL TICKS in the panel. REAL TICKS replays every real broker tick instead of one tick per M1 bar, so SL/TP, pending orders and stop-out trigger in the same order they would have happened. It needs tick history for the symbol; if none is found, the replay falls back to M1 bars and prints a warning in the Experts log",
+   "<b>Slower replay speeds</b>: speed now goes from 0.05x to 20x (it was 0.5x to 20x), so you can watch ticks one by one",
+   "<b>Symbol picker</b>: choose the symbol to replay from your Market Watch list inside the panel, with a search box (type part of the name and press Enter)",
+   "<b>ReplayBroker.mqh updated</b>: in REAL TICKS mode the bar that is still forming is followed tick by tick (new high, new low, last price), so your EA sees a realistic live bar. Replace your old copy of the file and recompile your EA",
+   "The replay toolbar now scales only with your screen DPI, so resizing or tiling the main chart no longer shrinks it"
+  ],
+  "fa": {
+   "1.1": [
+    "<b>جدید: حالت تیک واقعی</b>: در پنل بین BARS و REAL TICKS انتخاب کنید. حالت REAL TICKS به‌جای یک تیک برای هر کندل M1، همه تیک‌های واقعی بروکر را پخش می‌کند، بنابراین SL/TP، سفارش‌های معلق و استاپ‌اوت دقیقاً با همان ترتیبی که در بازار اتفاق افتاده فعال می‌شوند. این حالت به تاریخچه تیک نماد نیاز دارد؛ اگر پیدا نشود، ریپلی به کندل‌های M1 برمی‌گردد و در لاگ Experts هشدار چاپ می‌شود",
+    "<b>سرعت‌های کندتر ریپلی</b>: سرعت حالا از ۰٫۰۵ تا ۲۰ برابر است (قبلاً ۰٫۵ تا ۲۰ برابر بود) تا بتوانید تیک‌ها را یکی‌یکی ببینید",
+    "<b>انتخاب نماد</b>: نماد مورد نظر برای ریپلی را از لیست Market Watch داخل پنل انتخاب کنید، همراه با کادر جستجو (بخشی از نام را بنویسید و Enter بزنید)",
+    "<b>به‌روزرسانی ReplayBroker.mqh</b>: در حالت REAL TICKS کندلی که هنوز در حال شکل‌گیری است تیک‌به‌تیک دنبال می‌شود (سقف جدید، کف جدید، آخرین قیمت) و اکسپرت شما یک کندل زنده واقع‌گرایانه می‌بیند. نسخه قدیمی فایل را جایگزین کنید و اکسپرت خود را دوباره کامپایل کنید",
+    "اندازه نوار ابزار ریپلی حالا فقط به DPI صفحه‌نمایش وابسته است و با تغییر اندازه یا کنار هم قرار دادن چارت اصلی کوچک نمی‌شود"
+   ],
+   "1.0": [
+    "<b>اولین انتشار (نسخه آزمایشی)</b>: کنترلر ریپلی کندل به سبک TradingView برای MT5، بدون ورودی، همه چیز روی پنل داخل چارت است",
+    "<b>نوار ابزار ریپلی</b>: عقب، پخش/توقف، گام به جلو، کنترل سرعت از ۰٫۵ تا ۲۰ برابر و انتخاب تایم‌فریم، روی چارت ریپلی‌ای که خودش ساخته می‌شود",
+    "<b>پنل حساب مجازی</b>: موجودی اولیه، اسپرد، کمیسیون (خودکار از بروکر یا دستی) و تعداد روزهای تاریخچه برای بارگذاری قابل تنظیم است",
+    "<b>ReplayBroker.mqh</b>: یک بروکر مجازی به‌صورت فایل include. آن را در ابتدای هر اکسپرتی (پیش از Trade.mqh) اضافه کنید تا روی چارت ریپلی، هر پوزیشن، سفارش معلق، SL/TP، استاپ‌لیمیت، انقضا و استاپ‌اوت روی یک حساب هجینگ مجازی شبیه‌سازی شود، در حالی که همان اکسپرت روی چارت عادی همچنان واقعی و دست‌نخورده معامله می‌کند",
+    "تمپلیت چارت شما را اعمال می‌کند و تنظیمات به‌صورت خودکار ذخیره و بازیابی می‌شوند"
+   ],
+   "current": [
+    "<b>جدید: حالت تیک واقعی</b>: در پنل بین BARS و REAL TICKS انتخاب کنید. حالت REAL TICKS به‌جای یک تیک برای هر کندل M1، همه تیک‌های واقعی بروکر را پخش می‌کند، بنابراین SL/TP، سفارش‌های معلق و استاپ‌اوت دقیقاً با همان ترتیبی که در بازار اتفاق افتاده فعال می‌شوند. این حالت به تاریخچه تیک نماد نیاز دارد؛ اگر پیدا نشود، ریپلی به کندل‌های M1 برمی‌گردد و در لاگ Experts هشدار چاپ می‌شود",
+    "<b>سرعت‌های کندتر ریپلی</b>: سرعت حالا از ۰٫۰۵ تا ۲۰ برابر است (قبلاً ۰٫۵ تا ۲۰ برابر بود) تا بتوانید تیک‌ها را یکی‌یکی ببینید",
+    "<b>انتخاب نماد</b>: نماد مورد نظر برای ریپلی را از لیست Market Watch داخل پنل انتخاب کنید، همراه با کادر جستجو (بخشی از نام را بنویسید و Enter بزنید)",
+    "<b>به‌روزرسانی ReplayBroker.mqh</b>: در حالت REAL TICKS کندلی که هنوز در حال شکل‌گیری است تیک‌به‌تیک دنبال می‌شود (سقف جدید، کف جدید، آخرین قیمت) و اکسپرت شما یک کندل زنده واقع‌گرایانه می‌بیند. نسخه قدیمی فایل را جایگزین کنید و اکسپرت خود را دوباره کامپایل کنید",
+    "اندازه نوار ابزار ریپلی حالا فقط به DPI صفحه‌نمایش وابسته است و با تغییر اندازه یا کنار هم قرار دادن چارت اصلی کوچک نمی‌شود"
+   ]
+  }
+ },
+ "Heysolo-SecTM": {
+  "1.0": [
+   "<b>First release</b>: build live seconds charts inside MT5 from real tick data",
+   "<b>13 timeframes</b>: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 45 and 60 seconds",
+   "<b>3 build modes</b>: All Ticks, Session Only, and Session No Gaps (session hours in New York time, default 08:30 to 16:00)",
+   "<b>Up to 60 days</b> of tick history per chart, set with the +/- days control",
+   "<b>One-row toolbar</b> on the chart: mode, timeframe, days and Add, with build progress shown on the button and a LIVE timer",
+   "<b>Multiple seconds charts</b> at once, each in its own window with a clean title like \"XAUUSD S5\"",
+   "<b>Trade history overlay</b>: buy/sell arrows and connecting lines for your trades drawn on the seconds chart",
+   "<b>Back-to-seconds button</b> appears if you switch the timeframe by accident",
+   "Apply your own chart <b>template</b>, charts are restored after a timeframe change or recompile, and closing a chart cleans up its custom symbol"
+  ],
+  "current": [
+   "<b>First release</b>: build live seconds charts inside MT5 from real tick data",
+   "<b>13 timeframes</b>: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 45 and 60 seconds",
+   "<b>3 build modes</b>: All Ticks, Session Only, and Session No Gaps (session hours in New York time, default 08:30 to 16:00)",
+   "<b>Up to 60 days</b> of tick history per chart, set with the +/- days control",
+   "<b>One-row toolbar</b> on the chart: mode, timeframe, days and Add, with build progress shown on the button and a LIVE timer",
+   "<b>Multiple seconds charts</b> at once, each in its own window with a clean title like \"XAUUSD S5\"",
+   "<b>Trade history overlay</b>: buy/sell arrows and connecting lines for your trades drawn on the seconds chart",
+   "<b>Back-to-seconds button</b> appears if you switch the timeframe by accident",
+   "Apply your own chart <b>template</b>, charts are restored after a timeframe change or recompile, and closing a chart cleans up its custom symbol"
+  ],
+  "fa": {
+   "1.0": [
+    "<b>اولین نسخه</b>: ساخت چارت‌های زنده ثانیه‌ای داخل MT5 از داده‌های تیک واقعی",
+    "<b>۱۳ تایم‌فریم</b>: ۱، ۲، ۳، ۴، ۵، ۶، ۱۰، ۱۲، ۱۵، ۲۰، ۳۰، ۴۵ و ۶۰ ثانیه",
+    "<b>۳ حالت ساخت</b>: All Ticks، Session Only و Session No Gaps (ساعات سشن به وقت نیویورک، پیش‌فرض ۰۸:۳۰ تا ۱۶:۰۰)",
+    "<b>تا ۶۰ روز</b> تاریخچه تیک برای هر چارت، قابل تنظیم با کنترل +/- روز",
+    "<b>نوار ابزار یک‌ردیفه</b> روی چارت: حالت، تایم‌فریم، روزها و Add، با نمایش پیشرفت ساخت روی دکمه و تایمر LIVE",
+    "<b>چند چارت ثانیه‌ای</b> به‌طور هم‌زمان، هر کدام در پنجره جداگانه با عنوانی تمیز مثل «XAUUSD S5»",
+    "<b>نمایش تاریخچه معاملات</b>: فلش‌های خرید/فروش و خطوط اتصال معاملات شما روی چارت ثانیه‌ای رسم می‌شوند",
+    "<b>دکمه بازگشت به ثانیه‌ای</b> در صورتی که تایم‌فریم را اشتباهی عوض کنید ظاهر می‌شود",
+    "<b>تمپلیت</b> چارت خودتان را اعمال کنید؛ چارت‌ها پس از تغییر تایم‌فریم یا کامپایل مجدد بازیابی می‌شوند و بستن چارت، نماد سفارشی آن را پاک می‌کند"
+   ],
+   "current": [
+    "<b>اولین نسخه</b>: ساخت چارت‌های زنده ثانیه‌ای داخل MT5 از داده‌های تیک واقعی",
+    "<b>۱۳ تایم‌فریم</b>: ۱، ۲، ۳، ۴، ۵، ۶، ۱۰، ۱۲، ۱۵، ۲۰، ۳۰، ۴۵ و ۶۰ ثانیه",
+    "<b>۳ حالت ساخت</b>: All Ticks، Session Only و Session No Gaps (ساعات سشن به وقت نیویورک، پیش‌فرض ۰۸:۳۰ تا ۱۶:۰۰)",
+    "<b>تا ۶۰ روز</b> تاریخچه تیک برای هر چارت، قابل تنظیم با کنترل +/- روز",
+    "<b>نوار ابزار یک‌ردیفه</b> روی چارت: حالت، تایم‌فریم، روزها و Add، با نمایش پیشرفت ساخت روی دکمه و تایمر LIVE",
+    "<b>چند چارت ثانیه‌ای</b> به‌طور هم‌زمان، هر کدام در پنجره جداگانه با عنوانی تمیز مثل «XAUUSD S5»",
+    "<b>نمایش تاریخچه معاملات</b>: فلش‌های خرید/فروش و خطوط اتصال معاملات شما روی چارت ثانیه‌ای رسم می‌شوند",
+    "<b>دکمه بازگشت به ثانیه‌ای</b> در صورتی که تایم‌فریم را اشتباهی عوض کنید ظاهر می‌شود",
+    "<b>تمپلیت</b> چارت خودتان را اعمال کنید؛ چارت‌ها پس از تغییر تایم‌فریم یا کامپایل مجدد بازیابی می‌شوند و بستن چارت، نماد سفارشی آن را پاک می‌کند"
+   ]
+  }
+ }
+}

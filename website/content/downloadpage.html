@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<link rel="icon" href="/assets/images/favicon_download.ico" sizes="any" />
+<link rel="shortcut icon" href="/assets/images/favicon_download.ico" />
+<!-- skill:chrome -->
+<style>
+/* Credit line — bottom-right */
+.design-ui-credit {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  font: 11px/1 system-ui, sans-serif;
+  color: rgba(128,128,128,0.5);
+  pointer-events: none;
+  z-index: 2147483647;
+  transition: opacity 0.4s ease;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
+/* Hide chrome on touch devices */
+@media (hover: none) {
+  .design-ui-credit { display: none; }
+}
+
+/* Print fixes */
+@media print {
+  * {
+    transition: none !important;
+    animation: none !important;
+    box-shadow: none !important;
+  }
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .design-ui-credit { display: none !important; }
+}
+
+</style>
+<script>
+(function () {
+    // Design-ui pages are single compositions, so the whole body is editable.
+    function markEditable() {
+        document.body.classList.add('artifact-editable');
+    }
+
+    // Credit badge with idle-fade. Hover devices only.
+    function initChromeUI() {
+        if (!matchMedia('(hover: hover)').matches) return;
+
+        var credit = document.createElement('div');
+        credit.className = 'design-ui-credit';
+        credit.setAttribute('aria-hidden', 'true');
+        credit.innerHTML = '\u{1F49C} by Heysolo';
+        document.body.appendChild(credit);
+
+        var timer = null;
+        var fade = function (out) { credit.style.opacity = out ? '0' : ''; };
+        fade(true);
+        var show = function () {
+            fade(false);
+            clearTimeout(timer);
+            timer = setTimeout(function () { fade(true); }, 3000);
+        };
+        document.addEventListener('mousemove', show);
+        show();
+    }
+
+    function init() {
+        markEditable();
+        initChromeUI();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+
+</script>
+<!-- /skill:chrome -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HeySolo Tools | MT5 Downloads</title>
+<meta name="description" content="Download HeySolo ATM, HeySolo SecTM and HeySolo ForwardTester for MetaTrader 5.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Vazirmatn:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#171923;--s1:#1d2030;--s2:#24283b;--s3:#2c3147;--line:#ffffff1c;--ink:#f2f1f8;--muted:#acaec0;--quiet:#777b91;--violet:#bd91ff;--cyan:#7fe4e0;--green:#8ee1ae;--ease:cubic-bezier(.16,1,.3,1)}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "DM Sans",system-ui,sans-serif;overflow-x:hidden}body:before{content:"";position:fixed;inset:0;z-index:-2;background:radial-gradient(700px 520px at 90% 0,#7545aa28,transparent 70%),radial-gradient(600px 450px at 0 20%,#24898a20,transparent 70%)}body:after{content:"";position:fixed;inset:0;z-index:-1;opacity:.18;background-image:linear-gradient(#fff1 1px,transparent 1px),linear-gradient(90deg,#fff1 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(#000,transparent 85%)}a{color:inherit;text-decoration:none}button{font:inherit;color:inherit}.wrap{width:min(1160px,calc(100% - 48px));margin:auto}.mono{font-family:"Space Mono",monospace;font-variant-numeric:tabular-nums}.eyebrow{font:700 .68rem "Space Mono",monospace;letter-spacing:.13em;text-transform:uppercase;color:var(--quiet)}:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.top{position:sticky;top:0;z-index:10;background:#171923e8;border-bottom:1px solid var(--line);backdrop-filter:blur(18px)}.topin{min-height:74px;display:flex;align-items:center;gap:20px}.brand{display:flex;align-items:center;gap:12px}.logo{width:40px;height:40px;border-radius:50%;overflow:hidden;border:1px solid #fff3;box-shadow:0 0 28px #a070ff35}.logo img{width:100%;height:100%;object-fit:cover}.brand small,.brand strong{display:block;line-height:1.05}.brand small{font: .56rem "Space Mono",monospace;letter-spacing:.13em;text-transform:uppercase;color:var(--quiet)}.brand strong{margin-top:5px;font-size:.98rem}.nav{display:flex;gap:24px;margin-left:auto;align-items:center;color:var(--muted);font-size:.88rem}.nav a:hover{color:var(--ink)}.support{padding:9px 14px;border:1px solid #bd91ff70;border-radius:999px;background:#bd91ff16;color:var(--ink)}
+.hero{padding:clamp(28px,4.5vw,54px) 0 70px}.hero-grid{display:grid;grid-template-columns:1fr;align-items:end}.kicker{display:flex;align-items:center;gap:9px;color:var(--cyan);margin-bottom:20px}.kicker:before{content:"";width:22px;height:1px;background:var(--cyan);box-shadow:0 0 14px var(--cyan)}h1{margin:0;font-size:clamp(3.4rem,7.5vw,6.6rem);line-height:.9;letter-spacing:-.075em}h1 em{font-style:normal;color:var(--violet)}.lede{max-width:590px;margin:28px 0 0;color:var(--muted);font-size:1.08rem;line-height:1.7}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:32px}.btn{min-height:46px;padding:0 17px;border-radius:9px;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.22s var(--ease)}.btn:hover{transform:translateY(-2px)}.primary{background:var(--violet);border-color:var(--violet);color:#22182d;font-weight:700;box-shadow:0 12px 30px #9b67dc38}.quiet{background:var(--s1);color:var(--muted)}
+.panel{background:var(--s2);border:1px solid #fff3;border-radius:18px;padding:24px;box-shadow:0 28px 90px #06070d66;position:relative;overflow:hidden}.panel:after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--violet),var(--cyan))}.paneltop{display:flex;justify-content:space-between;gap:14px;padding-bottom:20px;border-bottom:1px solid var(--line)}.panelname{font-size:1.45rem;font-weight:700;margin-top:8px}.panelver{color:var(--cyan);font-size:.76rem;margin-top:4px}.ready{color:var(--green);font-size:.75rem;white-space:nowrap}.ready:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);margin-right:7px}.files{display:grid;gap:10px;padding-top:20px}.file{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 12px;border-radius:10px;background:var(--s1);border:1px solid var(--line);transition:.22s var(--ease)}.file:hover{transform:translateY(-2px);border-color:#bd91ff75;background:var(--s3)}.ico{width:36px;height:36px;display:grid;place-items:center;border-radius:9px;background:#bd91ff20;color:var(--violet);font:700 .62rem "Space Mono",monospace}.fname{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.87rem}.fmeta{display:block;color:var(--quiet);font-size:.68rem;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.size{color:var(--quiet);font-size:.69rem;white-space:nowrap}.empty{padding:22px 0;color:var(--muted);font-size:.86rem}
+section{padding:35px 0}.head{display:flex;justify-content:space-between;align-items:end;gap:24px;padding-bottom:20px;border-bottom:1px solid var(--line)}.head h2{margin:7px 0 0;font-size:clamp(1.9rem,4vw,2.7rem);line-height:1;letter-spacing:-.06em}.head p{max-width:42ch;color:var(--muted);font-size:.92rem}.tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:28px}.tab{appearance:none;text-align:left;cursor:pointer;display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center;min-height:auto;padding:14px 18px;background:var(--s1);border:1px solid var(--line);border-radius:14px;transition:.22s var(--ease)}.tab:hover{transform:translateY(-3px);border-color:#fff4}.tab[aria-selected=true]{background:var(--s2);border-color:#bd91ffaa;box-shadow:0 0 0 1px #bd91ff30,0 20px 45px #08090f3d}.symbol{width:44px;height:44px;display:grid;place-items:center;border-radius:11px;background:#bd91ff25;color:var(--violet);font:700 .72rem "Space Mono",monospace}.tab:nth-child(2) .symbol{background:#7fe4e022;color:var(--cyan)}.tab:nth-child(3) .symbol{background:#8ee1ae22;color:var(--green)}.tab h3{margin:0;font-size:1.06rem}.tab p{margin:7px 0 0;color:var(--muted);font-size:.81rem;line-height:1.55}.arrow{color:var(--quiet);font-size:1.25rem}.detail{display:grid;grid-template-columns:.82fr 1.18fr;gap:44px;margin-top:48px}.detail h3{margin:10px 0 0;font-size:clamp(2rem,4vw,3.45rem);line-height:.98;letter-spacing:-.065em}.detailcopy>p{max-width:50ch;margin:20px 0 0;color:var(--muted);line-height:1.7}.bullets{list-style:none;padding:0;margin:28px 0 0;display:grid;gap:12px}.bullets li{display:flex;gap:10px;color:var(--muted);font-size:.9rem}.bullets li:before{content:"✓";color:var(--green);font-family:"Space Mono",monospace}.note{margin-top:26px;padding-top:18px;border-top:1px solid var(--line);color:var(--quiet);font-size:.79rem}.note b{color:var(--ink)}.toolcard{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.7fr);gap:0;align-items:stretch;direction:ltr;padding:14px 12px;background:var(--s1);border:1px solid var(--line);border-radius:12px}.toolcard .filerow{display:grid;grid-template-columns:36px minmax(0,1fr);gap:12px;align-items:center}.toolcard .fname{display:block;color:var(--ink);text-decoration:none;font-size:.87rem}.toolcard .fname:hover{color:var(--violet);text-decoration:underline}.toolmain{display:grid;gap:10px;align-content:center;padding-right:16px;text-align:left}.toolside{display:flex;align-items:center;border-left:1px solid var(--line);padding-left:16px}.toolnote{margin:0;color:var(--muted);font-size:.78rem;line-height:1.7}.toolside[dir=rtl]{text-align:right}#otherFiles.files{grid-template-columns:1fr}@media(max-width:680px){.toolcard{grid-template-columns:1fr;gap:12px}.toolmain{padding-right:0}.toolside{border-left:0;border-top:1px solid var(--line);padding:12px 0 0}}.toolhint{color:var(--quiet);font-size:.72rem}.sidehead{display:flex;justify-content:flex-start;align-items:baseline;gap:10px;margin-bottom:13px;font-size:.9rem}.sidehead span{color:var(--violet);font-size:.9rem;font-weight:700}.stack{display:grid;gap:8px}
+.archive{border-top:1px solid var(--line);margin-top:30px}.row{border-bottom:1px solid var(--line)}.toggle{width:100%;display:grid;grid-template-columns:84px 1fr auto;gap:15px;align-items:center;padding:17px 0;border:0;background:none;text-align:left;cursor:pointer}.ver{font-size:1.02rem}.toggle:hover .ver,.row[data-open=true] .ver{color:var(--violet)}.summary{display:flex;flex-wrap:wrap;gap:8px 16px;color:var(--quiet);font-size:.75rem}.summary span{display:inline-flex;align-items:center;gap:6px}.pip{width:6px;height:6px;border-radius:50%;background:var(--violet)}.chev{color:var(--quiet);transition:.3s var(--ease)}.row[data-open=true] .chev{transform:rotate(180deg)}.rowpanel{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s var(--ease)}.row[data-open=true] .rowpanel{grid-template-rows:1fr}.rowinner{min-height:0;overflow:hidden}.rowcontent{display:grid;grid-template-columns:1fr .9fr;gap:32px;padding:0 0 22px 99px}.changes{margin:0;padding-left:18px;color:var(--muted);font-size:.82rem;display:grid;gap:8px}.changes li::marker{color:var(--violet)}.note-dl{display:inline-flex;align-items:center;gap:5px;margin-left:8px;padding:2px 9px;border-radius:999px;background:#bd91ff20;border:1px solid #bd91ff55;color:var(--violet);font-size:.72rem;white-space:nowrap;text-decoration:none}.note-dl:hover{background:#bd91ff35}
+.install{background:var(--s1);border-top:1px solid var(--line)}.installeyebrow{display:block;margin-bottom:32px}.install h2{margin:8px 0 0;font-size:clamp(2rem,4vw,3rem);line-height:.98;letter-spacing:-.06em}.install p{max-width:32ch;color:var(--muted);font-size:.92rem}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}.step{position:relative;padding:0}.stepbadge{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--violet),var(--cyan));color:#171923;font:700 .74rem "Space Mono",monospace;margin-bottom:14px}.step:nth-child(2) .stepbadge{background:linear-gradient(135deg,var(--cyan),var(--green))}.step:nth-child(3) .stepbadge{background:linear-gradient(135deg,var(--green),var(--violet))}.step h3{margin:0;font-size:1.05rem;font-weight:500}.step p{margin:10px 0 0;font-size:.85rem;line-height:1.65}code{font: .78em "Space Mono",monospace;color:var(--cyan)}footer{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;padding:24px 0 42px;color:var(--quiet);font-size:.78rem}footer a{color:var(--muted)}
+.langtoggle{appearance:none;cursor:pointer;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--s1);color:var(--muted);font:700 .7rem "Space Mono",monospace;letter-spacing:.06em;transition:.22s var(--ease)}.langtoggle:hover{color:var(--ink);border-color:#fff4;transform:translateY(-1px)}
+/* Persian / RTL — scoped to main + footer only; the header/nav above always stays LTR and in English */
+main[lang="fa"],footer[lang="fa"]{direction:rtl;font-family:"Vazirmatn","DM Sans",system-ui,sans-serif}
+main[lang="fa"] .mono,footer[lang="fa"] .mono{font-family:"Space Mono",monospace}
+main[lang="fa"] .tab,footer[lang="fa"] .toggle{text-align:right}
+main[lang="fa"] .bullets li:before{order:1}
+main[lang="fa"] h1,main[lang="fa"] h2,main[lang="fa"] h3{letter-spacing:0}
+main[lang="fa"] .changes{padding-left:0;padding-right:18px}
+main[lang="fa"] .rowcontent{padding:0 99px 22px 0}
+@media(max-width:920px){main[lang="fa"] .rowcontent{padding:0}}
+main[lang="fa"] .note-dl{margin-left:0;margin-right:8px}
+@media(max-width:920px){.hero-grid,.detail{grid-template-columns:1fr;gap:42px}.hero-aside{max-width:620px}.steps{gap:24px}}@media(max-width:680px){.wrap{width:min(100% - 32px,1160px)}.nav a:not(.support){display:none}.hero{padding-top:30px}h1{font-size:clamp(3.3rem,16vw,5rem)}.tabs,.steps,#otherFiles.files{grid-template-columns:1fr}.head{display:block}.head p{margin-top:14px}.toggle{grid-template-columns:70px 1fr auto;gap:10px}.rowcontent{grid-template-columns:1fr;padding-left:0}.size{display:none}.panel{padding:18px}}
+</style>
+</head>
+<body>
+<header class="top" dir="ltr" lang="en"><div class="wrap topin"><a class="brand" href="/" aria-label="Hey Solo home"><span class="logo"><img src="/assets/images/logo.jpg" alt="Hey Solo logo"></span><span><small>Sponsored by</small><strong>Hey Solo</strong></span></a><nav class="nav"><a href="#products">Products</a><a href="#releases">Releases</a><a class="support" href="https://t.me/HeySoloATM?direct" rel="noopener">Get support</a><button type="button" id="langToggle" class="langtoggle" aria-label="Switch language / تغییر زبان">فارسی</button></nav></div></header>
+<main id="mainContent" lang="en">
+<section class="hero"><div class="wrap hero-grid"><div><h1 data-i18n="hero_h1">Your edge <em>installed.</em></h1><p class="lede" data-i18n="hero_lede">Two focused tools inside MetaTrader 5 for traders who want more control: manage the trade, then see the market in seconds.</p><div class="actions"><a class="btn primary" href="#products" data-i18n="hero_cta1">Choose your tool ↘</a><a class="btn quiet" href="#install" data-i18n="hero_cta2">Installation guide</a></div></div></div></section>
+<section id="products"><div class="wrap"><div class="head"><div><div class="eyebrow" data-i18n="products_eyebrow">Pick your specialist</div><h2 data-i18n="products_h2">Built for the moment you are in.</h2></div></div><div class="tabs" id="tabs"></div><div class="detail" id="detail"></div></div></section>
+<section id="releases"><div class="wrap"><div class="head"><div><div class="eyebrow" data-i18n="releases_eyebrow">Release history</div><h2 id="archiveTitle" data-i18n="releases_h2">All builds</h2></div><p id="archiveMeta" data-i18n="releases_p">Every published build, kept available.</p></div><div class="archive" id="archive"><div class="empty" data-i18n="loading_history">Loading release history...</div></div></div></section>
+<section id="other"><div class="wrap"><div class="head"><div><div class="eyebrow" data-i18n="extra_eyebrow">Extra tools</div><h2 data-i18n="extra_h2">Download Tools.</h2></div></div><div class="files" id="otherFiles"><div class="empty" data-i18n="checking_extra">Checking for extra files...</div></div></div></section>
+<section class="install" id="install"><div class="wrap"><div class="eyebrow installeyebrow" data-i18n="install_eyebrow">Three clean steps</div><div class="steps"><article class="step"><div class="stepbadge">01</div><h3 data-i18n="step1_h3">Open your data folder</h3><p data-i18n="step1_p">In MT5, use <code>File → Open Data Folder</code>, then <code>MQL5 / Experts</code>.</p></article><article class="step"><div class="stepbadge">02</div><h3 data-i18n="step2_h3">Refresh Navigator</h3><p data-i18n="step2_p">Right-click Navigator and choose <code>Refresh</code>.</p></article><article class="step"><div class="stepbadge">03</div><h3 data-i18n="step3_h3">Attach and allow trading</h3><p data-i18n="step3_p">Double-click the expert, enable Algo Trading, and check the smile icon.</p></article></div></div></section>
+</main><footer class="wrap" id="siteFooter" lang="en"><span data-i18n="footer_text">HeySolo tools for MetaTrader 5.</span></footer>
+<script>
+const DIR='/assets/downloads/';
+/* Static UI strings, English + Persian. Header/nav is intentionally excluded
+   — it is always shown in English and is never touched by the toggle. */
+const I18N={
+en:{hero_h1:'Trade with <em>controlled risk.</em>',hero_lede:'Three tools for MetaTrader 5 traders: manage risk on every trade, read the market on seconds charts, and practice your strategy on a replay chart before risking real money.',hero_cta1:'Choose your tool ↘',hero_cta2:'Installation guide',panel_eyebrow:'Latest build',loading_release:'Loading release',ready_label:'Ready',reading_folder:'Reading the downloads folder...',products_eyebrow:'Pick your specialist',products_h2:'Manage risk. Read the market. Practice your edge.',releases_eyebrow:'Release history',releases_h2:'All builds',releases_p:'Every published build, kept available.',loading_history:'Loading release history...',extra_eyebrow:'Extra tools',extra_h2:'Download Tools.',checking_extra:'Checking for extra files...',install_eyebrow:'Three clean steps',step1_h3:'Open your data folder',step1_p:'In MT5, use <code>File → Open Data Folder</code>, then <code>MQL5 / Experts</code>.',step2_h3:'Refresh Navigator',step2_p:'Right-click Navigator and choose <code>Refresh</code>.',step3_h3:'Attach and allow trading',step3_p:'Double-click the expert, enable Algo Trading, and check the smile icon.',footer_text:'HeySolo tools for MetaTrader 5.',standard_build:'Standard build',variant_build:v=>v+' build',no_build_found:'No build found',ready_to_download:'Ready to download',no_matching_build:'No matching build found.',no_release_found:'No release found',unavailable:'Unavailable',no_builds_detected:'No builds detected for this product.',what_changed:'What changed:',no_releases_detected:'No releases detected.',no_release_notes:'No release notes recorded.',published_build:'Published build',paste_in:'Paste in:',no_extra_files:'No extra files found.',downloadable_builds:'downloadable builds',release_word:n=>n===1?'release':'releases',file_word:n=>n===1?'file':'files',toggle_label:'فارسی',locale:'en-US',archive_suffix:' archive',latest_files_label:'Latest version',no_builds_short:'No builds detected'},
+fa:{hero_h1:'با ریسک <em>کنترل‌شده</em> معامله کنید.',hero_lede:'سه ابزار برای معامله‌گران متاتریدر ۵: مدیریت ریسک در هر معامله، دیدن بازار روی چارت ثانیه‌ای، و تمرین استراتژی روی چارت ریپلی پیش از ریسک پول واقعی.',hero_cta1:'ابزار خود را انتخاب کنید ↙',hero_cta2:'راهنمای نصب',panel_eyebrow:'آخرین نسخه',loading_release:'در حال بارگذاری نسخه',ready_label:'آماده',reading_folder:'در حال خواندن پوشه دانلودها...',products_eyebrow:'ابزار خود را انتخاب کنید',products_h2:'ریسک را مدیریت کنید. بازار را بخوانید. استراتژی‌تان را تمرین کنید.',releases_eyebrow:'تاریخچه نسخه‌ها',releases_h2:'همه نسخه‌ها',releases_p:'هر نسخه‌ی منتشرشده، همیشه در دسترس.',loading_history:'در حال بارگذاری تاریخچه نسخه‌ها...',extra_eyebrow:'ابزارهای جانبی',extra_h2:'دانلود ابزارها.',checking_extra:'در حال بررسی فایل‌های جانبی...',install_eyebrow:'سه مرحله ساده',step1_h3:'پوشه دیتای خود را باز کنید',step1_p:'در MT5 مسیر <code>File → Open Data Folder</code> را باز کنید، سپس وارد <code>MQL5 / Experts</code> شوید.',step2_h3:'ناوبر را تازه‌سازی کنید',step2_p:'روی Navigator کلیک راست کرده و گزینه <code>Refresh</code> را انتخاب کنید.',step3_h3:'اتصال و فعال‌سازی معاملات',step3_p:'روی اکسپرت دوبار کلیک کنید، Algo Trading را فعال کنید و آیکون لبخند را بررسی کنید.',footer_text:'ابزارهای HeySolo برای متاتریدر ۵.',standard_build:'نسخه استاندارد',variant_build:v=>'نسخه '+v,no_build_found:'نسخه‌ای یافت نشد',ready_to_download:'آماده دانلود',no_matching_build:'نسخه‌ی منطبقی پیدا نشد.',no_release_found:'نسخه‌ای یافت نشد',unavailable:'موجود نیست',no_builds_detected:'برای این محصول نسخه‌ای شناسایی نشد.',what_changed:'تغییرات:',no_releases_detected:'نسخه‌ای شناسایی نشد.',no_release_notes:'یادداشتی برای این نسخه ثبت نشده است.',published_build:'نسخه منتشرشده',paste_in:'محل قرارگیری:',no_extra_files:'فایل جانبی‌ای یافت نشد.',downloadable_builds:'نسخه قابل دانلود',release_word:n=>'نسخه',file_word:n=>'فایل',toggle_label:'English',locale:'fa-IR',archive_suffix:' — آرشیو',latest_files_label:'آخرین نسخه',no_builds_short:'نسخه‌ای شناسایی نشد'}
+};
+const PRODUCTS=[
+{id:'atm',name:'HeySolo [ATM]',short:'ATM',match:['heysoloatm'],
+ kind:{en:'Expert Advisor · Trade management',fa:'اکسپرت ادوایزر · مدیریت معامله'},
+ desc:{en:'Risk management for your trades: sizes the lot from the risk you choose, sets SL/TP, and protects the account with loss and trade limits.',fa:'مدیریت ریسک معاملات: لات را بر اساس ریسکی که تعیین می‌کنید حساب می‌کند، SL/TP می‌گذارد و با محدودیت ضرر و تعداد معامله از حساب محافظت می‌کند.'},
+ lede:{en:'A risk management assistant for MT5. You decide how much you accept to lose per trade, and it calculates the lot size, opens the trade with SL and TP from the chart, then manages it (partial exit, breakeven, trailing). It also enforces your rules with daily and weekly loss limits, trade limits, and news and session filters, so one bad day cannot break your account or a prop challenge. Every trade is saved in a journal for review.',fa:'دستیار مدیریت ریسک برای MT5. شما تعیین می‌کنید در هر معامله چقدر ضرر را قبول دارید؛ اکسپرت لات را محاسبه می‌کند، معامله را همراه با SL و TP از روی چارت باز می‌کند و بعد آن را مدیریت می‌کند (خروج پله‌ای، سربه‌سر، تریل استاپ). قوانین شما را هم اعمال می‌کند: محدودیت ضرر روزانه و هفتگی، محدودیت تعداد معامله، فیلتر اخبار و سشن؛ تا یک روز بد حساب یا چالش پراپ شما را از بین نبرد. هر معامله برای مرور نتایج در ژورنال ذخیره می‌شود.'},
+ bullets:{en:['Risk by fixed dollars, percentage or lot size','Daily and weekly loss limits, targets, trade caps and cooldowns','Trade Journal, prop panel and Telegram reports'],fa:['ریسک بر اساس دلار ثابت، درصد یا حجم لات','محدودیت ضرر روزانه و هفتگی، اهداف سود، سقف تعداد معامله و زمان استراحت','ژورنال معاملات، پنل پراپ و گزارش تلگرام']},
+ note:{en:'If your terminal rejects the AVX build, use Standard. AVX is compiled for CPUs with AVX2 support.',fa:'اگر ترمینال شما نسخه AVX را نمی‌پذیرد، از نسخه Standard استفاده کنید. نسخه AVX برای پردازنده‌های دارای پشتیبانی AVX2 کامپایل شده است.'},
+ notesKey:'HeySolo[ATM]'},
+{id:'sectm',name:'HeySolo SecTM',short:'SEC',match:['heysolosectm','heysolosec'],
+ kind:{en:'Expert Advisor · Seconds chart builder',fa:'اکسپرت ادوایزر · سازنده چارت ثانیه‌ای'},
+ desc:{en:'For scalpers: MT5 has no seconds charts, so this builds them and lets you read price action on 1 to 60 second timeframes.',fa:'برای اسکالپرها: MT5 چارت ثانیه‌ای ندارد؛ این ابزار آن را می‌سازد تا حرکت قیمت را در تایم‌فریم‌های ۱ تا ۶۰ ثانیه ببینید.'},
+ lede:{en:'MT5 does not offer timeframes below 1 minute. SecTM builds 1 to 60 second charts from real tick data, so scalpers and short-term traders can see price action in more detail than M1, and trade from those charts with HeySolo [ATM].',fa:'MT5 تایم‌فریم زیر ۱ دقیقه ندارد. SecTM چارت‌های ۱ تا ۶۰ ثانیه‌ای را از روی داده‌های تیک واقعی می‌سازد تا اسکالپرها و معامله‌گران کوتاه‌مدت حرکت قیمت را دقیق‌تر از M1 ببینند و با HeySolo [ATM] از روی همان چارت‌ها معامله کنند.'},
+ bullets:{en:['13 timeframes from 1 to 60 seconds','All Ticks, Session Only and Session No Gaps modes','Up to 60 days of tick history with trade overlays'],fa:['۱۳ تایم‌فریم از ۱ تا ۶۰ ثانیه','حالت‌های All Ticks، Session Only و Session No Gaps','تا ۶۰ روز تاریخچه تیک همراه با نمایش معاملات روی چارت']},
+ note:{en:'Pairs with HeySolo [ATM] 4.0. Attach ATM to a seconds chart and orders route to the real broker symbol automatically.',fa:'با HeySolo [ATM] نسخه ۴.۰ هماهنگ است. ATM را روی چارت ثانیه‌ای متصل کنید تا سفارش‌ها به‌صورت خودکار به نماد واقعی بروکر ارسال شوند.'},
+ notesKey:'Heysolo-SecTM'},
+{id:'fwt',name:'HeySolo ForwardTester',short:'RPL',match:['heysoloforwardtester'],
+ kind:{en:'Expert Advisor · Bar replay forward tester (Beta)',fa:'اکسپرت ادوایزر · فوروارد تستر ریپلی (نسخه آزمایشی)'},
+ desc:{en:'Practice and test your strategy on past data: replay the market candle by candle, like TradingView Bar Replay, without risking money.',fa:'تمرین و تست استراتژی روی داده گذشته: بازار را کندل به کندل ریپلی کنید، مثل Bar Replay در TradingView، بدون ریسک پول.'},
+ lede:{en:'Go back to any past date and replay the market candle by candle with play, pause and speed controls, and trade it on a virtual account. Use it to practice your strategy, build screen time and check whether an idea works, without waiting for the live market or risking real money. It can also forward test your own EA when ReplayBroker.mqh is included in it.',fa:'به هر تاریخ گذشته برگردید و بازار را کندل به کندل با کنترل پخش، توقف و سرعت ریپلی کنید و روی یک حساب مجازی معامله کنید. برای تمرین استراتژی، افزایش تجربه پای چارت و بررسی اینکه یک ایده کار می‌کند یا نه، بدون اینکه منتظر بازار زنده بمانید یا پول واقعی ریسک کنید. اگر ReplayBroker.mqh را در اکسپرت خودتان اینکلود کنید، آن را هم فوروارد تست می‌کند.'},
+ bullets:{en:['Replay toolbar: back, play/pause, step forward, 0.5x-20x speed and a timeframe switcher','Virtual account panel: set starting balance, spread, commission and history length','Drop-in ReplayBroker.mqh redirects any EA\'s SL/TP, pending orders and stop-out to the virtual account, real charts stay untouched'],fa:['نوار ابزار ریپلی: عقب، پخش/توقف، گام به جلو، سرعت ۰٫۵ تا ۲۰ برابر و انتخاب تایم‌فریم','پنل حساب مجازی: موجودی اولیه، اسپرد، کمیسیون و طول تاریخچه قابل تنظیم است','فایل ReplayBroker.mqh با یک include ساده، SL/TP، سفارش‌های معلق و استاپ‌اوت هر اکسپرتی را به حساب مجازی هدایت می‌کند و چارت‌های واقعی دست‌نخورده باقی می‌مانند']},
+ note:{en:'Public beta (v1.0). Include ReplayBroker.mqh at the very top of your EA, before Trade.mqh, so it can forward test on the .rp replay symbol. If your terminal rejects the AVX build, use Standard.',fa:'در حال حاضر نسخه آزمایشی (v1.0) است. فایل ReplayBroker.mqh را در بالای کد اکسپرت خود، پیش از Trade.mqh، اینکلود کنید تا روی نماد ریپلی (.rp) فوروارد تست انجام شود. اگر ترمینال شما نسخه AVX را نمی‌پذیرد، از نسخه Standard استفاده کنید.'},
+ notesKey:'Heysolo-ForwardTester'}
+];
+const urlLang=new URLSearchParams(location.search).get('lang');
+let lang=(urlLang==='fa'||urlLang==='en')?urlLang:(localStorage.getItem('hs_lang')||'en');
+const t=k=>I18N[lang][k];
+const FALLBACK=[]; /* intentionally empty: only files that really exist in /assets/downloads/ are shown */
+let state={products:[],current:'atm',notes:{},entries:[]};const $=id=>document.getElementById(id);const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const rich=x=>esc(x).replace(/&lt;b&gt;/gi,'<b>').replace(/&lt;\/b&gt;/gi,'</b>');const size=x=>x?(x/1048576).toFixed(2)+' MB':'';const date=x=>{const d=new Date(x);return x&&!isNaN(d)?d.toLocaleDateString(t('locale'),{month:'short',day:'numeric',year:'numeric'}):''};const link=x=>DIR+encodeURIComponent(x);
+/* Fixed parser: accepts ATM Standard, ATM AVX and SecTM names with no space before v. */
+function parse(file){const f=String(file).split('/').pop();let m=f.match(/^(HeySolo\[ATM\])(?:_([A-Za-z0-9-]+))?v(\d+(?:\.\d+)*)\.(ex5|ex4)$/i);if(m)return{file:f,base:m[1],variant:(m[2]||'STD').toUpperCase(),version:m[3]};m=f.match(/^(Heysolo-SecTM)(?:_([A-Za-z0-9-]+))?v(\d+(?:\.\d+)*)\.(ex5|ex4)$/i);if(m)return{file:f,base:m[1],variant:(m[2]||'STD').toUpperCase(),version:m[3]};m=f.match(/^(Heysolo-ForwardTester)_(?:([A-Za-z0-9-]+))?v(\d+(?:\.\d+)*)\.(ex5|ex4)$/i);if(m)return{file:f,base:m[1],variant:(m[2]||'STD').toUpperCase(),version:m[3]};return null}
+function product(base){const n=base.toLowerCase().replace(/[^a-z0-9]/g,'');return PRODUCTS.find(p=>p.match.includes(n))}
+function cmp(a,b){const A=a.split('.').map(Number),B=b.split('.').map(Number);for(let i=0;i<Math.max(A.length,B.length);i++){const d=(B[i]||0)-(A[i]||0);if(d)return d}return 0}
+function group(entries){const out=PRODUCTS.map(p=>({...p,groups:new Map()}));for(const e of entries){const p=parse(e.file||e.name||'');if(!p)continue;const meta=product(p.base);if(!meta)continue;const model=out.find(x=>x.id===meta.id);if(!model.groups.has(p.version))model.groups.set(p.version,{version:p.version,files:[],date:null});const g=model.groups.get(p.version);g.files.push({...p,size:e.size||null,date:e.date||e.mtime||null});if(e.date&&(!g.date||e.date>g.date))g.date=e.date}return out.map(p=>({...p,groups:[...p.groups.values()].sort((a,b)=>cmp(a.version,b.version)).map(g=>({...g,files:g.files.sort((a,b)=>(a.variant==='STD'?0:1)-(b.variant==='STD'?0:1))}))}))}
+async function discover(){
+  /* nginx serves /assets/downloads/ with autoindex_format json, so read that
+     JSON directly. Falls back to scraping HTML hrefs (plain autoindex), then
+     to an empty list (no phantom files) if the directory can't be reached. */
+  try{
+    const rp=await fetch(DIR+'files.php',{cache:'no-store'});
+    if(rp.ok&&(rp.headers.get('content-type')||'').includes('application/json')){
+      const j=await rp.json();
+      const list=(Array.isArray(j)?j:[]).filter(x=>x.type==='file'&&x.name!=='files.json').map(x=>({file:x.name,size:x.size,date:x.mtime}));
+      if(list.length)return list;
+    }
+  }catch(e){}
+  try{
+    const r=await fetch(DIR,{cache:'no-store'});
+    if(r.ok){
+      const ct=r.headers.get('content-type')||'';
+      if(ct.includes('application/json')){
+        const j=await r.json();
+        const list=(Array.isArray(j)?j:[]).filter(x=>x.type==='file'&&x.name!=='files.json').map(x=>({file:x.name,size:x.size,date:x.mtime}));
+        if(list.length)return list;
+      } else {
+        const t=await r.text();const list=[];
+        for(const m of t.matchAll(/href=["']([^"']+\.(?:ex5|ex4|mqh|zip|rar|7z|set|pdf))["']/gi))list.push({file:decodeURIComponent(m[1].split('/').pop())});
+        if(list.length)return list;
+      }
+    }
+  }catch(e){}
+  return [];
+}
+async function notes(){try{const r=await fetch(DIR+'notes.json',{cache:'no-store'});if(r.ok)return await r.json()}catch(e){}return{}}
+function file(f){return`<a class="file" href="${link(f.file)}" download><span class="ico">EX5</span><span><span class="fname">${esc(f.variant==='STD'?t('standard_build'):t('variant_build')(f.variant))}</span><span class="fmeta mono">${esc(f.file)}</span></span><span class="size mono">${size(f.size)}</span></a>`}
+function extraFile(x){const e=state.entries.find(en=>String(en.file||'').toLowerCase()===x.file.toLowerCase());return`<a class="file" href="${link(x.file)}" download><span class="ico">MQH</span><span><span class="fname">${esc(x.label)}</span><span class="fmeta mono">${esc(x.file)}</span></span><span class="size mono">${e?size(e.size):''}</span></a>`}
+function renderExtras(p,g){if(!p.extras||!g)return'';const list=p.extras.filter(x=>!x.sinceVersion||cmp(g.version,x.sinceVersion)<=0);if(!list.length)return'';return`<div class="stack extras">${list.map(x=>extraFile(x)+(x.hint?`<p class="note">${esc(x.hint)}</p>`:'')).join('')}</div>`}
+function inlineDownload(x){const e=state.entries.find(en=>String(en.file||'').toLowerCase()===x.file.toLowerCase());return` <a class="note-dl mono" href="${link(x.file)}" download>⬇ ${esc(x.file)}${e?' · '+size(e.size):''}</a>`}
+function noteList(p,v){const N=state.notes[p.notesKey];if(!N||v==null)return null;const L=(lang==='fa'&&N.fa&&N.fa[v])||N[v];return Array.isArray(L)&&L.length?L:null}
+function enrichNote(text,p){const extra=(p.extras||[]).find(x=>x.noteMatch&&x.noteMatch.test(String(text)));return rich(text)+(extra?inlineDownload(extra):'')}
+const extOf=f=>{const m=String(f).match(/\.([a-z0-9]+)$/i);return m?m[1].toUpperCase():'FILE'};
+/* Real install path per exact file — not guessed from extension, since two
+   files with the same extension can belong in different folders. Add new
+   files here by their exact name; anything not listed shows no hint rather
+   than a guess. */
+const FILE_HINT={
+  'hey_solo_journal.mqh':'MQL5 / Experts',
+  'hey_solo__atm_.mq5':'MQL5 / Experts',
+  'heysolo_bridge.ex5':'MQL5 / Experts',
+  'heysolo_atm_helper.mqh':'MQL5 / Experts',
+  'heysolo_atm.mq5':'MQL5 / Experts',
+  'propdashboard.zip':'Common / Files',
+  'replaybroker.mqh':'MQL5 / Experts'
+};
+const FILE_NOTE={
+  'hey_solo_journal.mqh':{
+    en:"Only needed if you use the Trade Journal: it must be placed in MQL5 / Experts. If you don't use the Journal, this file is not required.",
+    fa:'این فایل فقط در صورت استفاده از ژورنال لازم است و باید در مسیر MQL5 / Experts قرار بگیرد. اگر از ژورنال استفاده نمی‌کنید، ضروری نیست.'
+  },
+  'replaybroker.mqh':{
+    en:"Only needed if you forward test your own EA with HeySolo ForwardTester: place it in MQL5 / Experts and include it at the very top of your EA, before Trade.mqh. If you don't use the ForwardTester, this file is not required.",
+    fa:'این فایل فقط در صورت فوروارد تست اکسپرت خودتان با HeySolo ForwardTester لازم است؛ آن را در مسیر MQL5 / Experts قرار دهید و در بالای کد اکسپرت، پیش از Trade.mqh، اینکلود کنید. اگر از ForwardTester استفاده نمی‌کنید، ضروری نیست.'
+  },
+  'hey_solo__atm_.mq5':{
+    en:"Source code of HeySolo [ATM], only needed if you want to compile it yourself: place it in MQL5 / Experts together with HeySolo_ATM_Helper.mqh in the same folder. If you just use the ready-made build above, this file is not required.",
+    fa:'کد منبع HeySolo [ATM] است و فقط برای زمانی لازم است که بخواهید خودتان آن را کامپایل کنید؛ آن را در مسیر MQL5 / Experts قرار دهید، فایل HeySolo_ATM_Helper.mqh هم در همان پوشه باشد. اگر از نسخه آماده بالا استفاده می‌کنید، ضروری نیست.'
+  },
+  'heysolo_atm_helper.mqh':{
+    en:"Only needed if you compile HeySolo [ATM] from source. This one file now holds everything: Replay Broker, shared types and Trade Journal. HeySolo [ATM] no longer needs Hey_Solo_Journal.mqh or ReplayBroker.mqh, because both are built into this file (ReplayBroker.mqh stays a separate file for ForwardTester). Place it in MQL5 / Experts next to HeySolo_ATM.mq5.",
+    fa:'فقط برای کامپایل HeySolo [ATM] از روی سورس لازم است. این یک فایل حالا همه‌چیز را در خود دارد: ریپلی بروکر، تایپ‌های مشترک و ژورنال معاملات. دیگر نیازی به Hey_Solo_Journal.mqh و ReplayBroker.mqh برای HeySolo [ATM] نیست چون هر دو داخل همین فایل هستند (ReplayBroker.mqh برای ForwardTester همچنان فایل جداگانه است). آن را در MQL5 / Experts کنار HeySolo_ATM.mq5 قرار دهید.'
+  },
+  'heysolo_atm.mq5':{
+    en:"Source code of HeySolo [ATM], only needed if you want to compile it yourself: place it in MQL5 / Experts together with HeySolo_ATM_Helper.mqh in the same folder. If you just use the ready-made build above, this file is not required.",
+    fa:'کد منبع HeySolo [ATM] است و فقط برای زمانی لازم است که بخواهید خودتان آن را کامپایل کنید؛ آن را در مسیر MQL5 / Experts و کنار فایل HeySolo_ATM_Helper.mqh قرار دهید. اگر از نسخه آماده بالا استفاده می‌کنید، ضروری نیست.'
+  },
+  'heysolo_bridge.ex5':{
+    en:"Companion tool for HeySolo [ATM]. It does all the internet work (Telegram messages, dashboard data, remote settings), so ATM never waits for the network and a weak connection can't slow your trades. Attach it once on any spare chart, then set Send Via = SEND PY BOT / BRIDGE EA in ATM.",
+    fa:'ابزار کمکی HeySolo [ATM]. تمام کارهای اینترنتی (پیام‌های تلگرام، داده‌های داشبورد، تنظیمات از راه دور) را انجام می‌دهد، پس ATM هرگز منتظر شبکه نمی‌ماند و اینترنت ضعیف معاملات را کند نمی‌کند. فقط یک بار روی یک چارت اضافه نصب کنید و در ATM گزینه Send Via را روی SEND PY BOT / BRIDGE EA بگذارید.'
+  },
+  'propdashboard.zip':{
+    en:"Optional, not required. It is used to view your Trade Journal records and the prop account graphics. If you want it, extract it into Common / Files.",
+    fa:'ضروری نیست. برای نمایش رکوردهای ژورنال و گرافیک پراپ استفاده می‌شود. در صورت نیاز به آن، در مسیر Common / Files استخراج کنید.'
+  }
+};
+const FILE_TITLE={'heysolo_bridge.ex5':'HeySolo Bridge','heysolo_atm_helper.mqh':'HeySolo ATM Helper'};
+function fileTitle(f){return FILE_TITLE[String(f).toLowerCase()]||''}
+function fileNote(f){const n=FILE_NOTE[String(f).toLowerCase()];return n?(n[lang]||n.en):''}
+function folderHint(f){return FILE_HINT[String(f).toLowerCase()]||''}
+function genericFile(e){const hint=folderHint(e.file);const note=fileNote(e.file);const title=fileTitle(e.file);const meta=[date(e.date),size(e.size)].filter(Boolean).join(' - ');return`<div class="toolcard"><div class="toolmain">${hint?`<span class="toolhint">${esc(t('paste_in'))} ${esc(hint)}</span>`:''}<div class="filerow"><span class="ico">${esc(extOf(e.file).slice(0,4))}</span><span><a class="fname" href="${link(e.file)}" download>${esc(title||e.file)}</a><span class="fmeta mono">${esc((title?e.file+' - ':'')+meta)}</span></span></div></div>${note?`<div class="toolside" dir="${lang==='fa'?'rtl':'ltr'}"><p class="toolnote">${esc(note)}</p></div>`:''}</div>`}
+function otherFiles(){
+  /* Anything sitting in the downloads folder that isn't a recognized EA
+     build and isn't already shown as a per-version "extra" — so a .zip, a
+     .mq5 source file, or any future file type surfaces here automatically. */
+  const known=new Set();
+  for(const p of state.products)for(const g of p.groups)for(const f of g.files)known.add(f.file.toLowerCase());
+  for(const p of PRODUCTS)for(const x of(p.extras||[]))known.add(x.file.toLowerCase());
+  return state.entries.filter(e=>e.file&&/\.(ex5|ex4|mqh|mq5|zip|rar|7z|set|pdf)$/i.test(e.file)&&!known.has(e.file.toLowerCase())); /* allowlist: server files like files.php, notes.json, index.*, error_log are never shown */
+}
+function renderOther(){const el=$('otherFiles');if(!el)return;const list=otherFiles();el.innerHTML=list.length?list.map(genericFile).join(''):`<div class="empty">${esc(t('no_extra_files'))}</div>`}
+function latest(p){return p.groups[0]}
+function renderHero(p){const g=latest(p);$('heroName').textContent=p.name;$('heroVersion').textContent=g?'v'+g.version+(g.date?' · '+date(g.date):''):t('no_release_found');$('heroReady').textContent=g?t('ready_to_download'):t('no_build_found');$('heroFiles').innerHTML=g?g.files.map(file).join(''):`<div class="empty">${esc(t('no_matching_build'))}</div>`}
+function renderTabs(){ $('tabs').innerHTML=state.products.map(p=>`<button class="tab" role="tab" aria-selected="${p.id===state.current}" data-id="${p.id}"><span class="symbol">${p.short}</span><span><h3>${esc(p.name)}</h3><p>${esc(p.desc[lang])}</p></span><span class="arrow">↗</span></button>`).join('');document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>select(b.dataset.id))}
+function renderDetail(p){const g=latest(p);const n=noteList(p,g?.version)||noteList(p,'current')||[];$('detail').innerHTML=`<div class="detailcopy"><div class="eyebrow">${esc(p.kind[lang])}</div><h3>${esc(p.name)}</h3><p>${esc(p.lede[lang])}</p><ul class="bullets">${p.bullets[lang].map(x=>`<li>${esc(x)}</li>`).join('')}</ul><p class="note">${rich(p.note[lang])}</p></div><div><div class="sidehead"><strong>${esc(t('latest_files_label'))}</strong><span>${g?'v'+g.version:esc(t('unavailable'))}</span></div><div class="stack">${g?g.files.map(file).join(''):`<div class="empty">${esc(t('no_builds_detected'))}</div>`}</div>${renderExtras(p,g)}${n.length?`<p class="note"><b>${esc(t('what_changed'))}</b> ${enrichNote(n[0],p)}</p>`:''}</div>`}
+function renderArchive(p){$('archiveTitle').textContent=p.name+t('archive_suffix');$('archiveMeta').textContent=p.groups.length?`${p.groups.length} ${t('release_word')(p.groups.length)} · ${p.groups.reduce((n,g)=>n+g.files.length,0)} ${t('downloadable_builds')}`:t('no_builds_short');if(!p.groups.length){$('archive').innerHTML=`<div class="empty">${esc(t('no_releases_detected'))}</div>`;return}$('archive').innerHTML=p.groups.map((g,i)=>{const ns=noteList(p,g.version)||[];return`<div class="row" data-open="false"><button class="toggle" aria-expanded="false"><span class="ver mono">v${g.version}</span><span class="summary"><span>${date(g.date)||t('published_build')}</span><span><i class="pip"></i>${g.files.length} ${t('file_word')(g.files.length)}</span></span><span class="chev">⌄</span></button><div class="rowpanel"><div class="rowinner"><div class="rowcontent"><div>${ns.length?`<ul class="changes">${ns.map(x=>`<li>${enrichNote(x,p)}</li>`).join('')}</ul>`:`<div class="empty">${esc(t('no_release_notes'))}</div>`}</div><div class="stack">${g.files.map(file).join('')}${renderExtras(p,g)}</div></div></div></div></div>`}).join('');document.querySelectorAll('.toggle').forEach(b=>b.onclick=()=>{const r=b.closest('.row'),open=r.dataset.open==='true';r.dataset.open=String(!open);b.setAttribute('aria-expanded',String(!open))})}
+function select(id){state.current=id;const p=state.products.find(x=>x.id===id)||state.products[0];if(!p)return;history.replaceState(null,'','#'+p.id);renderTabs();renderDetail(p);renderArchive(p)}
+function applyStatic(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>{const key=el.getAttribute('data-i18n');if(I18N[lang][key]!==undefined)el.innerHTML=I18N[lang][key]});
+  const main=$('mainContent'),foot=$('siteFooter');
+  main.lang=lang;foot.lang=lang;
+  main.dir=lang==='fa'?'rtl':'ltr';foot.dir=lang==='fa'?'rtl':'ltr';
+  document.title=lang==='fa'?'ابزارهای HeySolo | دانلود MT5':'HeySolo Tools | MT5 Downloads';
+  const desc=document.querySelector('meta[name="description"]');if(desc)desc.setAttribute('content',lang==='fa'?'دانلود HeySolo ATM، HeySolo SecTM و HeySolo ForwardTester برای متاتریدر ۵.':'Download HeySolo ATM, HeySolo SecTM and HeySolo ForwardTester for MetaTrader 5.');
+  const btn=$('langToggle');if(btn)btn.textContent=t('toggle_label');
+}
+function rerender(){if(!state.products.length)return;renderTabs();const p=state.products.find(x=>x.id===state.current)||state.products[0];renderDetail(p);renderArchive(p);renderOther()}
+function setLang(l){lang=l;localStorage.setItem('hs_lang',lang);const u=new URL(location.href);if(lang==='fa')u.searchParams.set('lang','fa');else u.searchParams.delete('lang');history.replaceState(null,'',u.pathname+u.search+location.hash);applyStatic();rerender()}
+$('langToggle')?.addEventListener('click',()=>setLang(lang==='fa'?'en':'fa'));
+applyStatic();
+(async()=>{const [entries,n]=await Promise.all([discover(),notes()]);state.entries=entries;state.products=group(entries);state.notes=n;renderOther();const hash=location.hash.slice(1);if(state.products.some(p=>p.id===hash))state.current=hash;select(state.current)})();
+</script>
+</body>
+</html>
