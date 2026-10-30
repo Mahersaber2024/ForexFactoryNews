@@ -14,7 +14,18 @@ NC='\033[0m'
 echo "1) Flask only  (run the API on this server, no bot)"
 echo "2) Flask + Telegram Bot  (both on this same server)"
 echo "3) Telegram Bot only  (bot on this server, Flask API runs elsewhere)"
-read -p "Choose install mode [1/2/3]: " INSTALL_MODE
+echo "4) Uninstall  (remove ForexFactory API / Bot from this server)"
+read -p "Choose install mode [1/2/3/4]: " INSTALL_MODE
+
+if [ "$INSTALL_MODE" = "4" ]; then
+  UNINSTALL_SCRIPT="$APP_DIR/scripts/uninstall.sh"
+  if [ -f "$UNINSTALL_SCRIPT" ]; then
+    bash "$UNINSTALL_SCRIPT"
+  else
+    bash <(curl -fsSL "https://raw.githubusercontent.com/Mahersaber2024/ForexFactoryNews/main/scripts/uninstall.sh")
+  fi
+  exit $?
+fi
 
 RUN_FLASK=true
 RUN_BOT=false
@@ -164,7 +175,7 @@ else
   API_BASE_URL="$REMOTE_API_BASE_URL"
 fi
 
-# .env is built by bot_settings.py (also moves an old forexbot.db into data/)
+# .env is built by bot_settings.py
 "$APP_DIR/.venv/bin/python" "$APP_DIR/bot_settings.py" set \
   "RUN_FLASK=$RUN_FLASK" \
   "FLASK_HOST=0.0.0.0" \
@@ -207,7 +218,6 @@ if [ "$RUN_BOT" = "true" ]; then
     fi
   fi
 
-  # An old bot must not write to its SQLite file while it is being imported.
   systemctl stop forexfactory-bot.service 2>/dev/null || true
 
   if ! (cd "$APP_DIR" && .venv/bin/python -m db.setup_db); then
