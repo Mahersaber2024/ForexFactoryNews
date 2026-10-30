@@ -6,7 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import bot_settings as cfg
-from bot import backup_manager, database as legacy, migrate_sqlite, postgres
+from bot import backup_manager
+from db import database as legacy, migrate_sqlite, postgres
 
 
 class FakePg:

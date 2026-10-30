@@ -17,7 +17,8 @@ except ModuleNotFoundError:
     psycopg2._test_stub = True
     sys.modules["psycopg2"] = psycopg2
 
-from bot import backup_manager, database
+from bot import backup_manager
+from db import database
 
 
 class DatabaseTests(unittest.TestCase):

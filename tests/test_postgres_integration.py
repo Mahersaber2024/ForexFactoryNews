@@ -8,7 +8,7 @@ from pathlib import Path
 
 import psycopg2
 import bot_settings as cfg
-from bot import database as legacy, migrate_sqlite, postgres
+from db import database as legacy, migrate_sqlite, postgres
 
 
 ENABLED = (os.environ.get("FOREX_RUN_PG_TESTS") == "1"

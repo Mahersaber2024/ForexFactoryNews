@@ -178,22 +178,41 @@ fi
   "SEND_RESTART_MSG=$SEND_RESTART_MSG"
 
 if [ "$RUN_BOT" = "true" ]; then
-  echo "Configure an existing, dedicated PostgreSQL database and user for this bot."
-  for key in DB_HOST DB_PORT DB_NAME DB_USER DB_SSLMODE; do
-    current=$("$APP_DIR/.venv/bin/python" "$APP_DIR/bot_settings.py" get "$key")
-    read -r -p "$key [$current]: " value
-    "$APP_DIR/.venv/bin/python" "$APP_DIR/bot_settings.py" set "$key=${value:-$current}"
-  done
-  read -rs -p "DB_PASSWORD (Enter keeps existing): " FFX_INSTALL_DB_PASSWORD
   echo
-  if [ -n "$FFX_INSTALL_DB_PASSWORD" ]; then
-    export FFX_INSTALL_DB_PASSWORD
-    "$APP_DIR/.venv/bin/python" -c 'import os, bot_settings as c; v=c.read_env(); v["DB_PASSWORD"]=c.validate("DB_PASSWORD", os.environ["FFX_INSTALL_DB_PASSWORD"]); c.write_env(v)'
-    unset FFX_INSTALL_DB_PASSWORD
+  echo -e "${CYAN}Database (PostgreSQL)${NC}"
+  echo "1) Install PostgreSQL on this server and set it up automatically (recommended)"
+  echo "2) Use an existing PostgreSQL server (you enter its details)"
+  read -r -p "Choose [1/2, default 1]: " DB_MODE
+  DB_MODE=${DB_MODE:-1}
+
+  if [ "$DB_MODE" = "2" ]; then
+    echo "Configure an existing, dedicated PostgreSQL database and user for this bot."
+    for key in DB_HOST DB_PORT DB_NAME DB_USER DB_SSLMODE; do
+      current=$("$APP_DIR/.venv/bin/python" "$APP_DIR/bot_settings.py" get "$key")
+      read -r -p "$key [$current]: " value
+      "$APP_DIR/.venv/bin/python" "$APP_DIR/bot_settings.py" set "$key=${value:-$current}"
+    done
+    read -rs -p "DB_PASSWORD (Enter keeps existing): " FFX_INSTALL_DB_PASSWORD
+    echo
+    if [ -n "$FFX_INSTALL_DB_PASSWORD" ]; then
+      export FFX_INSTALL_DB_PASSWORD
+      "$APP_DIR/.venv/bin/python" -c 'import os, bot_settings as c; v=c.read_env(); v["DB_PASSWORD"]=c.validate("DB_PASSWORD", os.environ["FFX_INSTALL_DB_PASSWORD"]); c.write_env(v)'
+      unset FFX_INSTALL_DB_PASSWORD
+    fi
+  else
+    if ! bash "$APP_DIR/db/provision_postgres.sh" "$APP_DIR"; then
+      echo -e "${RED}Automatic PostgreSQL setup failed. Nothing else was changed.${NC}"
+      echo "Check: systemctl status postgresql   and   pg_lsclusters"
+      exit 1
+    fi
   fi
-  if ! (cd "$APP_DIR" && .venv/bin/python -c 'from bot import postgres; postgres.initialize()'); then
-    echo -e "${RED}PostgreSQL setup or legacy migration is required before restarting the bot.${NC}"
-    echo "See README: stop the old bot, back up the data, and run python -m bot.migrate_sqlite."
+
+  # An old bot must not write to its SQLite file while it is being imported.
+  systemctl stop forexfactory-bot.service 2>/dev/null || true
+
+  if ! (cd "$APP_DIR" && .venv/bin/python -m db.setup_db); then
+    echo -e "${RED}Database setup failed. The bot was not restarted.${NC}"
+    echo "Fix the problem above, then run: cd $APP_DIR && .venv/bin/python -m db.setup_db"
     exit 1
   fi
 fi
@@ -227,9 +246,9 @@ systemctl restart forexfactory-api.service
 fi
 
 if [ "$RUN_BOT" = "true" ]; then
-AFTER_UNITS="network.target"
+AFTER_UNITS="network.target postgresql.service"
 if [ "$RUN_FLASK" = "true" ]; then
-  AFTER_UNITS="network.target forexfactory-api.service"
+  AFTER_UNITS="network.target postgresql.service forexfactory-api.service"
 fi
 
 cat > /etc/systemd/system/forexfactory-bot.service <<EOF
