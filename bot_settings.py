@@ -28,7 +28,6 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env"
 DATA_DIR = BASE_DIR / "data"
 BACKUP_DIR = DATA_DIR / "backups"
-DB_PATH = DATA_DIR / "forexbot.db"
 
 # Website (lives in this repo, served by nginx) and the folder the bot uploads EA builds into
 SITE_DIR = BASE_DIR / "website" / "content"
@@ -124,21 +123,6 @@ def validate(key: str, value: str) -> str:
     return value
 
 
-# ───────────────  Legacy migration  ────────────────
-def migrate_legacy_files() -> None:
-    """Old versions kept forexbot.db next to telegram_bot.py (project root)."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    for name in ("forexbot.db",):
-        old = BASE_DIR / name
-        new = DATA_DIR / name
-        if old.exists() and not new.exists():
-            try:
-                shutil.move(str(old), str(new))
-            except OSError:
-                pass
-
-
 # ───────────────  Runtime config (importable)  ────────────────
 def _get(values: dict[str, str], key: str) -> str:
     # Real environment variables (e.g. from systemd) win over .env
@@ -183,7 +167,8 @@ def reload() -> None:
     DB_SSLMODE = _get(v, "DB_SSLMODE")
 
 
-migrate_legacy_files()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 reload()
 
 

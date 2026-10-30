@@ -422,7 +422,7 @@ cmd_update(){
         fi
         systemctl stop forexfactory-bot.service 2>/dev/null || true
         if ! (cd "$P_DIR" && .venv/bin/python -m db.setup_db); then
-          die "Database setup/migration failed. The bot was not restarted. See README."
+          die "Database setup failed. The bot was not restarted. See README."
         fi
       fi
       [[ -f "$P_DIR/scripts/rename-services.sh" ]] && bash "$P_DIR/scripts/rename-services.sh" "$P_DIR"
