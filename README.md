@@ -43,13 +43,17 @@ forexfactory-api/
 │   └── uninstall.sh
 ├── .env                     → runtime config (created by bot_settings.py)
 └── data/                    → runtime data (not in git)
-    ├── forexbot.db
+    ├── forexbot.db         → legacy SQLite file, only needed for migration
     └── backups/
 ```
 
 Installed to `/opt/forexfactory-api`. `Dockerfile` and `envshowrun` were removed; `bot_settings.py` replaces them.
 
 ## Quick Install
+
+The commands below install whatever version is published in the GitHub repository.
+They do **not** install changes from an attached ZIP unless those changes have first
+been published there. For this ZIP, follow `POSTGRES_MIGRATION_FA.md` instead.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Mahersaber2024/ForexFactoryNews/main/scripts/install.sh)
@@ -218,7 +222,32 @@ Just send `/admin` in the bot and everything is done with buttons:
 
 There's also a standalone `/myid` command that shows your chat ID, useful the first time you're setting `ADMIN_CHAT_ID`.
 
-The active URL is stored in the bot's local SQLite database (`data/forexbot.db`), so it survives bot restarts, and it overrides the `API_BASE_URL` value from `.env` once set. Only the configured `ADMIN_CHAT_ID` can use these commands; everyone else is ignored.
+The active URL is stored in the bot's PostgreSQL database, so it survives restarts and overrides `API_BASE_URL`. Only `ADMIN_CHAT_ID` can use these commands.
+
+### Database upgrades
+
+The bot's live data is now in PostgreSQL, with a project-specific schema in
+`bot/postgres.py`. It does not use the schema of any other project. Provision a **dedicated
+empty PostgreSQL database and user** before running the bot, and set `DB_HOST`, `DB_PORT`,
+`DB_NAME`, `DB_USER`, `DB_PASSWORD` and `DB_SSLMODE` using `python bot_settings.py`.
+For remote servers use TLS (`verify-full`) and an appropriate CA certificate. The setup
+will refuse to initialize a nonempty, unrelated database.
+
+For an existing SQLite installation, stop the old bot and back it up first. Preserve
+`.env` and the whole `data/` directory. Install requirements, set the PostgreSQL settings,
+then run `python -m bot.migrate_sqlite` from the project root **before starting the bot**.
+The import accepts only an empty PostgreSQL target, runs in one transaction, and does not
+delete or modify the original SQLite file. New startup refuses to silently skip an
+existing old SQLite file. A different source path can be supplied as an argument.
+The detailed Persian guide is `POSTGRES_MIGRATION_FA.md`.
+
+Bot backups use a SQLite *interchange snapshot* for compatibility with existing backups;
+the live bot never reads or writes SQLite. Backups include database credentials and bot
+tokens. Restore replaces only this bot's PostgreSQL tables, with a pre-restore backup and
+transactional import; current PostgreSQL connection settings are kept on settings restore.
+The API JSON cache is separate and is not included. Tests: `python -m unittest discover -s tests`;
+PostgreSQL integration tests require the optional dedicated test database documented in
+the Persian guide.
 
 This is useful if you run several Flask servers (e.g. one in Iran, one elsewhere) and want to fail over or switch between them without touching the server.
 
@@ -410,3 +439,13 @@ Unit forexfactory-bot.service could not be found.
 - Do not paste Markdown links inside Nginx config. Use plain text only.
 - If you do not need the Telegram bot, choose Flask only during install.
 - If Flask runs on a different server than the bot, choose Telegram Bot only during install and point it at the remote API URL — see "Running Flask and the Bot on Separate Servers" above.
+
+## API cache
+
+The Flask API keeps its data in a cache that is also saved on disk (`data/api_cache.json`), so a restart no longer
+throws it away and no new request is sent to ForexFactory. Requests are always answered from the cache; a
+background scheduler refreshes it. The schedule (stored in `data/api_cache_settings.json`) is changed from the bot:
+**/admin → ◴ API cache** (refresh every N minutes, and/or at fixed times in Tehran time, or *Refresh now*).
+
+If the bot and the API run on different servers, put the same `CACHE_ADMIN_TOKEN=<secret>` in `.env` on both.
+With no token, only the same machine can change the settings.

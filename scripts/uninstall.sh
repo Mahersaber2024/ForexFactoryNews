@@ -54,7 +54,7 @@ if [ -f "$APP_DIR/.env" ]; then
 fi
 
 # Offer a final full backup (DB + .env) before everything is deleted
-if [ -f "$APP_DIR/data/forexbot.db" ] && [ -x "$APP_DIR/.venv/bin/python" ]; then
+if [ -x "$APP_DIR/.venv/bin/python" ]; then
     read -p "Save a final backup of the bot data to /root before removing? [Y/n]: " DO_BACKUP
     DO_BACKUP=${DO_BACKUP:-Y}
     if [[ "$DO_BACKUP" =~ ^[Yy]$ ]]; then

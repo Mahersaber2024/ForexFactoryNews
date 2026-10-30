@@ -415,6 +415,11 @@ cmd_update(){
       info "Updating Forex Factory (git pull, pip, restart)..."
       git -C "$P_DIR" pull --ff-only || die "git pull failed (local changes?)."
       "$P_DIR/.venv/bin/pip" install -q -r "$P_DIR/requirements.txt"
+      if unit_belongs "forexfactory-bot.service" "$P_DIR"; then
+        if ! (cd "$P_DIR" && .venv/bin/python -c 'from bot import postgres; postgres.initialize()'); then
+          die "PostgreSQL setup/migration needed. Existing bot was not restarted. See README."
+        fi
+      fi
       [[ -f "$P_DIR/scripts/rename-services.sh" ]] && bash "$P_DIR/scripts/rename-services.sh" "$P_DIR"
       local s
       for s in $P_SERVICES; do unit_belongs "$s" "$P_DIR" && systemctl restart "$s"; done

@@ -3,7 +3,7 @@ Full backup / restore for the Telegram bot.
 
 A backup is a .zip containing:
     manifest.json   → format version, creation time, row counts
-    forexbot.db     → consistent snapshot of the SQLite DB (via sqlite backup API)
+    forexbot.db     → portable SQLite snapshot of PostgreSQL application data
     settings.env    → copy of .env (bot token, admin id, API url, ...)
 
 Restore accepts either one of these .zip files or a raw forexbot.db file
@@ -13,6 +13,7 @@ safety backup, so a bad restore can always be undone from the admin panel.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -23,6 +24,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import bot_settings as cfg
+from bot import database
+from bot import postgres
+from bot import migrate_sqlite
 
 BACKUP_FORMAT = 1
 APP_ID = "forexfactory-bot"
@@ -87,9 +91,17 @@ def _table_counts(db: Path) -> dict[str, int]:
         cur = conn.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
         tables = [r[0] for r in cur.fetchall()]
-        return {t: cur.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in tables}
+        return {t: cur.execute('SELECT COUNT(*) FROM "' + t.replace('"', '""') + '"').fetchone()[0]
+                for t in tables}
     finally:
         conn.close()
+
+
+def live_table_counts() -> dict[str, int]:
+    from contextlib import closing
+    with closing(postgres.connect()) as conn:
+        return {table: conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+                for table in postgres.TABLES}
 
 
 def _check_db(db: Path) -> dict[str, int]:
@@ -99,6 +111,12 @@ def _check_db(db: Path) -> dict[str, int]:
     conn = sqlite3.connect(str(db))
     try:
         res = conn.execute("PRAGMA integrity_check").fetchone()
+        version = database.schema_version(conn)
+        if version > database.SCHEMA_VERSION:
+            raise BackupError(
+                f"This backup uses database schema {version}, newer than this bot supports "
+                f"({database.SCHEMA_VERSION}). Update the bot before restoring it."
+            )
     except sqlite3.DatabaseError as e:
         raise BackupError(f"Database is corrupted: {e}") from None
     finally:
@@ -113,7 +131,9 @@ def _check_db(db: Path) -> dict[str, int]:
 
 
 def _parse_env_text(text: str) -> dict[str, str]:
-    tmp = Path(tempfile.mkstemp(suffix=".env")[1])
+    fd, name = tempfile.mkstemp(suffix=".env")
+    os.close(fd)
+    tmp = Path(name)
     try:
         tmp.write_text(text, encoding="utf-8")
         return cfg.read_env(tmp)
@@ -126,9 +146,7 @@ def create_backup(label: str = "manual") -> Path:
     """Create a full backup zip in data/backups and return its path."""
     label = re.sub(r"[^a-z\-]", "", label.lower()) or "manual"
     cfg.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    if not cfg.DB_PATH.exists():
-        raise BackupError("No database yet, nothing to back up.")
-
+    cfg.BACKUP_DIR.chmod(0o700)
     out = cfg.BACKUP_DIR / f"backup-{_now_stamp()}-{label}.zip"
     n = 1
     while out.exists():                      # two backups in the same second
@@ -137,8 +155,10 @@ def create_backup(label: str = "manual") -> Path:
 
     with tempfile.TemporaryDirectory() as td:
         snap = Path(td) / ZIP_DB
-        _sqlite_copy(cfg.DB_PATH, snap)
-        counts = _table_counts(snap)
+        try:
+            counts = migrate_sqlite.snapshot_postgres(snap)
+        except Exception as exc:
+            raise BackupError(f"PostgreSQL backup failed: {exc}") from exc
         builds = _build_files()
         manifest = {
             "app": APP_ID,
@@ -149,15 +169,20 @@ def create_backup(label: str = "manual") -> Path:
             "includes_settings": cfg.ENV_FILE.exists(),
             "ea_builds": [b.name for b in builds],
         }
-        tmp_zip = out.with_suffix(".part")
-        with zipfile.ZipFile(tmp_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(ZIP_MANIFEST, json.dumps(manifest, indent=2, ensure_ascii=False))
-            zf.write(snap, ZIP_DB)
-            if cfg.ENV_FILE.exists():
-                zf.write(cfg.ENV_FILE, ZIP_ENV)
-            for f in builds:
-                zf.write(f, ZIP_BUILDS + f.name)
-        tmp_zip.replace(out)
+        fd, temporary = tempfile.mkstemp(prefix=".backup-", suffix=".part", dir=cfg.BACKUP_DIR)
+        tmp_zip = Path(temporary)
+        try:
+            with os.fdopen(fd, "w+b") as tmp_handle:
+                with zipfile.ZipFile(tmp_handle, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                    zf.writestr(ZIP_MANIFEST, json.dumps(manifest, indent=2, ensure_ascii=False))
+                    zf.write(snap, ZIP_DB)
+                    if cfg.ENV_FILE.exists():
+                        zf.write(cfg.ENV_FILE, ZIP_ENV)
+                    for f in builds:
+                        zf.write(f, ZIP_BUILDS + f.name)
+            tmp_zip.replace(out)
+        finally:
+            tmp_zip.unlink(missing_ok=True)
 
     prune_backups()
     return out
@@ -223,10 +248,14 @@ def prepare_restore(source: Path) -> RestorePlan:
             manifest = {"app": APP_ID, "format": 0, "label": "raw-db"}
         elif zipfile.is_zipfile(source):
             with zipfile.ZipFile(source) as zf:
+                names = set(zf.namelist())
+                if len(names) != len(zf.namelist()):
+                    raise BackupError("Backup contains duplicate entries.")
+                if sum(info.file_size for info in zf.infolist()) > 200 * 1024 * 1024:
+                    raise BackupError("Uncompressed backup is larger than 200 MB.")
                 bad = zf.testzip()
                 if bad:
                     raise BackupError(f"Zip is damaged (bad entry: {bad}).")
-                names = set(zf.namelist())
                 if ZIP_DB not in names:
                     raise BackupError("Zip doesn't contain forexbot.db, this isn't a bot backup.")
                 if ZIP_MANIFEST in names:
@@ -273,22 +302,22 @@ def apply_restore(plan: RestorePlan, include_settings: bool = False) -> tuple[Pa
     Download files in the backup are copied back into the downloads folder (existing files are kept).
     Returns (safety_backup_path, settings_changed).
     """
-    safety = None
-    if cfg.DB_PATH.exists():
-        safety = create_backup("pre-restore")
-
-    cfg.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # Copy INTO the live DB with the sqlite backup API: atomic from SQLite's
-    # point of view and safe while other connections exist.
-    _sqlite_copy(plan.db_file, cfg.DB_PATH)
-
-    # Verify what we just wrote
-    _check_db(cfg.DB_PATH)
+    safety = create_backup("pre-restore")
+    try:
+        migrate_sqlite.import_sqlite(plan.db_file, replace=True)
+    except Exception as exc:
+        raise BackupError(f"PostgreSQL restore failed and was rolled back: {exc}") from exc
 
     settings_changed = False
     if include_settings and plan.env_values:
         current = cfg.read_env()
         new_values = dict(plan.env_values)
+        # Keep the current PostgreSQL target; an old backup may have no DB credentials.
+        for key in ("DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSLMODE"):
+            if key in current:
+                new_values[key] = current[key]
+            else:
+                new_values.pop(key, None)
         # Never wipe a working token / admin with an empty value from the backup
         for key in ("TELEGRAM_BOT_TOKEN", "ADMIN_CHAT_ID"):
             if not new_values.get(key) and current.get(key):

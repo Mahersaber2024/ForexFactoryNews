@@ -48,9 +48,16 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "API_BASE_URL":       ("http://127.0.0.1:45869/api/forex", "Flask API base URL the bot uses", False),
     "SEND_RESTART_MSG":   ("false", "Notify all users when the bot restarts (true/false)", False),
     "BACKUP_KEEP":        ("10",    "How many backup files to keep on disk", False),
+    "DB_HOST":            ("127.0.0.1", "PostgreSQL host", False),
+    "DB_PORT":            ("5432", "PostgreSQL port", False),
+    "DB_NAME":            ("forexfactory", "Dedicated PostgreSQL database", False),
+    "DB_USER":            ("forexfactory", "PostgreSQL user", False),
+    "DB_PASSWORD":        ("", "PostgreSQL password", True),
+    "DB_SSLMODE":         ("prefer", "PostgreSQL SSL mode (use verify-full for remote connections)", False),
+    "CACHE_ADMIN_TOKEN":  ("",      "Secret that lets the bot's admin panel change the API cache settings (same value on the API server and the bot; empty = only same-machine access)", True),
 }
 BOOL_KEYS = {"RUN_FLASK", "FLASK_DEBUG", "RUN_BOT", "SEND_RESTART_MSG"}
-INT_KEYS = {"FLASK_PORT", "ADMIN_CHAT_ID", "BACKUP_KEEP"}
+INT_KEYS = {"FLASK_PORT", "ADMIN_CHAT_ID", "BACKUP_KEEP", "DB_PORT"}
 
 
 # ───────────────  .env read / write  ────────────────
@@ -87,6 +94,11 @@ def write_env(values: dict[str, str], path: pathlib.Path = ENV_FILE) -> None:
 
 
 def validate(key: str, value: str) -> str:
+    if key == "DB_PASSWORD":
+        import re
+        if value and not re.fullmatch(r"[A-Za-z0-9_@%+=:.,/-]+", value):
+            raise ValueError("DB_PASSWORD in .env may use only letters, digits and _ @ % + = : . , / -")
+        return value
     value = value.strip()
     if key in BOOL_KEYS:
         low = value.lower()
@@ -97,10 +109,14 @@ def validate(key: str, value: str) -> str:
         raise ValueError(f"{key} must be true or false")
     if key in INT_KEYS:
         try:
-            int(value or FIELDS[key][0])
+            number = int(value or FIELDS[key][0])
         except ValueError:
             raise ValueError(f"{key} must be a number") from None
+        if key == "DB_PORT" and not 1 <= number <= 65535:
+            raise ValueError("DB_PORT must be between 1 and 65535")
         return value or FIELDS[key][0]
+    if key == "DB_SSLMODE" and value not in ("disable", "allow", "prefer", "require", "verify-ca", "verify-full"):
+        raise ValueError("Invalid PostgreSQL SSL mode")
     if key in ("API_BASE_URL", "PUBLIC_BASE_URL"):
         value = value.rstrip("/")
         if value and not value.startswith(("http://", "https://")):
@@ -144,7 +160,8 @@ def reload() -> None:
     """(Re)load config from .env into module-level constants."""
     global RUN_FLASK, FLASK_HOST, FLASK_PORT, FLASK_DEBUG, PUBLIC_BASE_URL
     global RUN_BOT, TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, API_BASE_URL
-    global SEND_RESTART_MSG, BACKUP_KEEP
+    global SEND_RESTART_MSG, BACKUP_KEEP, CACHE_ADMIN_TOKEN
+    global DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE
     v = read_env()
     RUN_FLASK = _as_bool(_get(v, "RUN_FLASK"))
     FLASK_HOST = _get(v, "FLASK_HOST") or "0.0.0.0"
@@ -157,6 +174,13 @@ def reload() -> None:
     API_BASE_URL = _get(v, "API_BASE_URL").rstrip("/")
     SEND_RESTART_MSG = _as_bool(_get(v, "SEND_RESTART_MSG"))
     BACKUP_KEEP = max(1, _as_int(_get(v, "BACKUP_KEEP"), 10))
+    CACHE_ADMIN_TOKEN = _get(v, "CACHE_ADMIN_TOKEN").strip()
+    DB_HOST = _get(v, "DB_HOST")
+    DB_PORT = _as_int(_get(v, "DB_PORT"), 5432)
+    DB_NAME = _get(v, "DB_NAME")
+    DB_USER = _get(v, "DB_USER")
+    DB_PASSWORD = _get(v, "DB_PASSWORD")
+    DB_SSLMODE = _get(v, "DB_SSLMODE")
 
 
 migrate_legacy_files()
@@ -258,7 +282,7 @@ def cmd_setup(_args) -> int:
 
     values["RUN_BOT"] = _ask("RUN_BOT", cur("RUN_BOT"))
     if values["RUN_BOT"] == "true":
-        for k in ("TELEGRAM_BOT_TOKEN", "ADMIN_CHAT_ID"):
+        for k in ("TELEGRAM_BOT_TOKEN", "ADMIN_CHAT_ID", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSLMODE"):
             values[k] = _ask(k, cur(k))
         api_default = cur("API_BASE_URL")
         if values["RUN_FLASK"] == "true":

@@ -4,13 +4,13 @@ import signal
 import asyncio
 import datetime as dt
 import requests
-import sqlite3
 import pathlib
 import re
 import html
 import hashlib
 import json
 import io
+import time
 from contextlib import closing
 
 # Make the project root importable (for bot_settings / bot package)
@@ -27,6 +27,7 @@ from bot import calendar_image
 from bot import font_setup
 from bot import tz
 from bot import reminders
+from bot import postgres as database
 from telegram.error import Forbidden, BadRequest
 
 from datetime import datetime
@@ -87,7 +88,7 @@ logger = logging.getLogger(__name__)
 LANGS = ("fa", "en")
 
 def _db():
-    return sqlite3.connect(DB_PATH, timeout=10)
+    return database.connect()
 
 def get_stored_language(chat_id: int) -> str | None:
     """The language the user picked, or None if they never picked one."""
@@ -150,109 +151,15 @@ API_BASE = DEFAULT_API_BASE
 
 # ───────────────  DB helpers  ─────────────
 def ensure_db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    cur = conn.cursor()
-    
-    # جدول اصلی مشترکین
-    cur.execute(
-        """CREATE TABLE IF NOT EXISTS subscribers (
-               chat_id     INTEGER PRIMARY KEY,
-               digest_time TEXT DEFAULT '07:00',
-               joined_at   TEXT DEFAULT CURRENT_TIMESTAMP,
-               language    TEXT DEFAULT 'en',
-               digest_on   INTEGER NOT NULL DEFAULT 1
-        );"""
-    )
-
-    # جدول ارزهای انتخابی کاربر
-    cur.execute(
-        """CREATE TABLE IF NOT EXISTS user_currencies (
-               chat_id     INTEGER PRIMARY KEY,
-               currencies  TEXT DEFAULT 'USD',
-               impacts     TEXT DEFAULT 'High'
-        );"""
-    )
-
-    # جدول جدید برای جلوگیری از تکرار اطلاع به ادمین
-    cur.execute(
-        """CREATE TABLE IF NOT EXISTS users (
-               chat_id   INTEGER PRIMARY KEY,
-               joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
-               menu_kb   INTEGER NOT NULL DEFAULT 0
-        );"""
-    )
-
-    # Key/value bot settings, including the active Flask API URL
-    cur.execute(
-        """CREATE TABLE IF NOT EXISTS bot_config (
-               key   TEXT PRIMARY KEY,
-               value TEXT
-        );"""
-    )
-
-    # Named Flask servers saved by the admin
-    cur.execute(
-        """CREATE TABLE IF NOT EXISTS api_servers (
-               name TEXT PRIMARY KEY,
-               url  TEXT NOT NULL
-        );"""
-    )
-
-    conn.commit()
-    conn.close()
-    channels.ensure_table()   # users' own channels for the daily digest
-    channel_style.ensure_table()   # ❖ per-user look of the channel posts (picture / style / logo)
-    ensure_calendar_table()   # ▦ daily date message (Persian / Gregorian), separate from the news
-    reminders.ensure_tables() # ◷ free reminders (one-time / daily / weekly)
+    database.initialize()
     if font_setup.missing():   # ✎ Persian font for the pictures: fetch Vazirmatn in the background (never blocks / breaks the bot)
         import threading
         threading.Thread(target=font_setup.ensure_persian_fonts, daemon=True).start()
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    cur = conn.cursor()
-
-    # اطمینان از وجود ستون language در subscribers
-    try:
-        cur.execute("ALTER TABLE subscribers ADD COLUMN language TEXT DEFAULT 'en'")
-    except sqlite3.OperationalError:
-        pass
-    # 1 once the ⌂ Main Menu keyboard button has been sent to that user
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN menu_kb INTEGER NOT NULL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN news_menu_message_id INTEGER")
-    except sqlite3.OperationalError:
-        pass
-    # Impact filter per user (🔴 High / 🟠 Medium / 🟡 Low). Default: High only.
-    try:
-        cur.execute("ALTER TABLE user_currencies ADD COLUMN impacts TEXT DEFAULT 'High'")
-    except sqlite3.OperationalError:
-        pass
-    # Daily High-Impact News on/off. Existing rows were all "subscribed", so they default to on.
-    try:
-        cur.execute("ALTER TABLE subscribers ADD COLUMN digest_on INTEGER NOT NULL DEFAULT 1")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cur.execute("ALTER TABLE subscribers ADD COLUMN pre_news_on INTEGER NOT NULL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    cur.execute("""CREATE TABLE IF NOT EXISTS pre_news_sent (
-        chat_id INTEGER NOT NULL, event_key TEXT NOT NULL, sent_date TEXT NOT NULL,
-        PRIMARY KEY (chat_id, event_key)
-    )""")
-    cur.execute("""CREATE TABLE IF NOT EXISTS pre_news_deliveries (
-        chat_id INTEGER NOT NULL, event_key TEXT NOT NULL, target_id INTEGER NOT NULL,
-        sent_date TEXT NOT NULL, PRIMARY KEY (chat_id, event_key, target_id))""")
-
-    conn.commit()
-    conn.close()
 
 # ───────────────  Runtime API server config  ─────────────
 def get_config(key: str, default: str | None = None) -> str | None:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _db()
         cur = conn.cursor()
         cur.execute("SELECT value FROM bot_config WHERE key = ?", (key,))
         row = cur.fetchone()
@@ -263,7 +170,7 @@ def get_config(key: str, default: str | None = None) -> str | None:
         return default
 
 def set_config(key: str, value: str):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _db()
     cur = conn.cursor()
     cur.execute(
         """
@@ -296,7 +203,7 @@ def is_admin(chat_id: int) -> bool:
 
 def list_api_servers() -> dict[str, str]:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _db()
         cur = conn.cursor()
         cur.execute("SELECT name, url FROM api_servers ORDER BY name")
         rows = cur.fetchall()
@@ -306,7 +213,7 @@ def list_api_servers() -> dict[str, str]:
         return {}
 
 def save_api_server(name: str, url: str):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _db()
     cur = conn.cursor()
     cur.execute(
         """
@@ -319,7 +226,7 @@ def save_api_server(name: str, url: str):
     conn.close()
 
 def delete_api_server(name: str) -> bool:
-    conn = sqlite3.connect(DB_PATH)
+    conn = _db()
     cur = conn.cursor()
     cur.execute("DELETE FROM api_servers WHERE name = ?", (name,))
     deleted = cur.rowcount > 0
@@ -358,7 +265,7 @@ def set_brief_on(chat_id: int, on: bool, language: str | None = None):
         conn.execute(
             """INSERT INTO subscribers (chat_id, language, digest_on) VALUES (?, ?, ?)
                ON CONFLICT(chat_id) DO UPDATE SET digest_on = excluded.digest_on,
-                   pre_news_on = CASE WHEN excluded.digest_on = 1 THEN 0 ELSE pre_news_on END""",
+                   pre_news_on = CASE WHEN excluded.digest_on = 1 THEN 0 ELSE subscribers.pre_news_on END""",
             (int(chat_id), language, 1 if on else 0))
 
 def set_brief_time(chat_id: int, hhmm: str, language: str | None = None):
@@ -468,7 +375,7 @@ UI = {
         'toast_time': "◷ ساعت: {time}",
         # time picker
         't_title': "◷ <b>ساعت ارسال خبرها</b>\n\n{now}\n\n▾ ساعت دلخواهت رو بنویس و بفرست، مثلاً <code>7:23</code> یا <code>17:00</code>\nیا یکی از دکمه‌های پایین رو بزن.\n\n△ ساعت <b>{zone}</b> حساب می‌شه.",
-        't_bad': "✕ این ساعت نامعتبره. این‌جوری بفرست: <code>7:23</code> یا <code>17:00</code>",
+        't_bad': "✕ این ساعت نامعتبره.\nساعت باید بین <code>0</code> تا <code>23</code> و دقیقه بین <code>0</code> تا <code>59</code> باشه.\nمثال درست: <code>7:23</code> یا <code>17:00</code> یا <code>13:05</code>",
         'p_line_on': "● <b>روشن</b>: هر روز کاری (دوشنبه تا جمعه) ساعت <b>{time}</b>{hint}",
         'p_line_off': "○ <b>خاموش</b>: خبری خودکار نمیاد. برای روشن کردن «تغییر ساعت» رو بزن.",
         'p_all_cur': "همه ارزها",
@@ -505,7 +412,7 @@ UI = {
         'toast_off': "◌ Auto-send is off",
         'toast_time': "◷ Time: {time}",
         't_title': "◷ <b>When should I send the news?</b>\n\n{now}\n\n▾ Type a time and send it, e.g. <code>7:23</code> or <code>17:00</code>\nor tap one of the buttons below.\n\n△ The time must be <b>{zone}</b>.",
-        't_bad': "✕ That's not a valid time. Send it like <code>7:23</code> or <code>17:00</code>",
+        't_bad': "✕ That's not a valid time.\nHour must be 0-23 and minute 0-59.\nExamples: <code>7:23</code>, <code>17:00</code>, <code>13:05</code>",
         'p_line_on': "● <b>On</b>: sent every weekday (Mon–Fri) at <b>{time}</b> New York time{hint}",
         'p_line_off': "○ <b>Off</b>: nothing is sent automatically. Tap “Change sending time” to turn it on.",
         'p_all_cur': "All currencies",
@@ -741,10 +648,14 @@ AWAIT_BRIEF_TIME = "brief_time"
 QUICK_TIMES = ("07:00", "08:00", "09:00", "12:00", "15:00", "17:00")
 
 def parse_hhmm(text: str) -> str | None:
-    """'7:23', '17:00', '7', '1723', '5pm', '07.30' (also Persian/Arabic digits) → 'HH:MM', or None."""
+    """'7:23', '13:5', '17:00', '7', '1723', '5pm', '07.30', '13 5', '13/05' (also Persian/Arabic digits) → 'HH:MM', or None."""
     text = (text or "").translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
-    text = text.strip().lower().replace("٫", ":")
-    m = re.fullmatch(r"(\d{1,2})(?:[:.](\d{1,2}))?\s*(am|pm)?", text) or re.fullmatch(r"(\d{1,2})(\d{2})()", text)
+    text = text.strip().lower()
+    for sep in ("٫", "：", "؛", ";", "/", ",", "،", "-", "_", "h"):
+        text = text.replace(sep, ":")
+    text = re.sub(r"\s*:\s*", ":", text)
+    m = (re.fullmatch(r"(\d{1,2})(?:[:.\s](\d{1,2}))?\s*(am|pm)?", text)
+         or re.fullmatch(r"(\d{1,2})(\d{2})()", text))
     if not m:
         return None
     h, mi, ap = int(m.group(1)), int(m.group(2) or 0), m.group(3)
@@ -915,23 +826,7 @@ CAL_UI = {
 }
 
 def ensure_calendar_table():
-    with closing(_db()) as conn, conn:
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS date_daily (
-                   chat_id   INTEGER PRIMARY KEY,
-                   is_on     INTEGER NOT NULL DEFAULT 0,
-                   send_time TEXT    NOT NULL DEFAULT '07:00',
-                   kinds     TEXT    NOT NULL DEFAULT 'jalali,gregorian',
-                   last_sent TEXT
-            );""")
-        # old single switch "also post to my channels" (kept only to migrate old settings)
-        try:
-            conn.execute("ALTER TABLE date_daily ADD COLUMN to_channel INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        # where the daily date goes: the user's own chat (dest_id = chat_id) and/or any connected channels
-        conn.execute("""CREATE TABLE IF NOT EXISTS date_dest (
-                   chat_id INTEGER NOT NULL, dest_id INTEGER NOT NULL, PRIMARY KEY (chat_id, dest_id))""")
+    database.initialize()
 
 def get_cal(chat_id: int) -> dict:
     try:
@@ -950,7 +845,7 @@ def get_cal(chat_id: int) -> dict:
 def _set_cal(chat_id: int, column: str, value):
     assert column in ("is_on", "send_time", "kinds", "last_sent", "to_channel")
     with closing(_db()) as conn, conn:
-        conn.execute("INSERT OR IGNORE INTO date_daily (chat_id) VALUES (?)", (int(chat_id),))
+        conn.execute("INSERT INTO date_daily (chat_id) VALUES (?) ON CONFLICT DO NOTHING", (int(chat_id),))
         conn.execute(f"UPDATE date_daily SET {column} = ? WHERE chat_id = ?", (value, int(chat_id)))
 
 def get_date_dests(chat_id: int) -> list[int]:
@@ -1260,6 +1155,21 @@ def get_filtered_events(endpoint: str, allowed_currencies: list[str],
         logger.error(f"Error fetching data from {API_BASE}/{endpoint}: {e}")
         raise
 
+def get_events_with_retry(endpoint: str, allowed_currencies: list[str], impacts: list[str] | None = None,
+                          attempts: int = 3, delays: tuple[float, ...] = (3, 8)) -> list[dict]:
+    """get_filtered_events, tried up to `attempts` times (blocking: run it with asyncio.to_thread).
+    Raises the last error if every attempt failed. An empty list is a real answer ("no news"), not a failure."""
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            return get_filtered_events(endpoint, allowed_currencies, impacts)
+        except Exception as e:      # network / HTTP 5xx / bad JSON
+            last = e
+            logger.warning("News fetch attempt %d/%d for '%s' failed: %s", i + 1, attempts, endpoint, e)
+            if i < attempts - 1:
+                time.sleep(delays[min(i, len(delays) - 1)])
+    raise last
+
 def group_by_currency(events: list[dict]) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = {}
     for ev in events:
@@ -1528,7 +1438,8 @@ async def fetch_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE, end
     await safe_edit(q.message, dashboard + "\n\n" + loading, main_menu_keyboard(language, cid, selected))
     allowed, impacts = get_user_currencies(cid), get_user_impacts(cid)
     try:
-        events = await asyncio.to_thread(get_filtered_events, tz.endpoint_for(endpoint, language, cid), allowed, impacts)
+        events = await asyncio.to_thread(get_events_with_retry, tz.endpoint_for(endpoint, language, cid), allowed, impacts,
+                                          3, (1, 2))
     except Exception:
         logger.exception("Fetching %s news for %s failed", endpoint, cid)
         events = None
@@ -1615,6 +1526,7 @@ def build_admin_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("↺ Restore", callback_data="admin_restore"),
         ],
         [InlineKeyboardButton("▦ Saved backups", callback_data="admin_backups")],
+        [InlineKeyboardButton("◴ API cache", callback_data="admin_cache")],
         [InlineKeyboardButton("● Restart message · On" if restart_notice_on() else "○ Restart message · Off",
                               callback_data="admin_restartmsg")],
     ]
@@ -1630,6 +1542,141 @@ async def admin_restartmsg_callback(update: Update, context: ContextTypes.DEFAUL
     set_config("restart_notice", "1" if on else "0")
     await q.answer("● Users get a message after each restart" if on else "○ Restarts are silent now")
     await safe_edit(q.message, build_admin_menu_text(), build_admin_menu_keyboard())
+
+# ───────────────  Admin: API cache  ─────────────
+ADMIN_AWAIT_CACHE_TIMES = "admin_cache_times"
+CACHE_INTERVALS = (2, 5, 10, 15, 30, 60)
+CACHE_LABELS = {"today": "Today", "tomorrow": "Tomorrow", "weekly": "Week", "yesterday": "Yesterday"}
+
+def _cache_call(method: str, path: str = "", body: dict | None = None) -> dict:
+    """Talks to the cache endpoints of the ACTIVE API server (blocking: call it with asyncio.to_thread)."""
+    headers = {"X-Admin-Token": cfg.CACHE_ADMIN_TOKEN} if getattr(cfg, "CACHE_ADMIN_TOKEN", "") else {}
+    r = requests.request(method, f"{API_BASE}/cache{path}", json=body, headers=headers, timeout=20)
+    if r.status_code == 403:
+        raise PermissionError("403")
+    if r.status_code == 404:
+        raise FileNotFoundError("404")
+    r.raise_for_status()
+    return r.json()
+
+def _ago(seconds: int | None) -> str:
+    if seconds is None:
+        return "never"
+    if seconds < 90:
+        return f"{seconds}s ago"
+    if seconds < 5400:
+        return f"{round(seconds / 60)} min ago"
+    return f"{seconds / 3600:.1f} h ago"
+
+def _in(iso: str | None, now_iso: str) -> str:
+    if not iso:
+        return "—"
+    secs = int((dt.datetime.fromisoformat(iso) - dt.datetime.fromisoformat(now_iso)).total_seconds())
+    if secs <= 5:
+        return "any moment"
+    if secs < 90:
+        return f"in {secs}s"
+    if secs < 5400:
+        return f"in {round(secs / 60)} min"
+    return f"in {secs / 3600:.1f} h"
+
+def _cache_error_text(err: Exception) -> str:
+    if isinstance(err, PermissionError):
+        return ("✕ The API server refused the change.\n"
+                "Set the same <code>CACHE_ADMIN_TOKEN</code> in .env on the bot and on that server, then restart both.")
+    if isinstance(err, FileNotFoundError):
+        return "✕ This API server is too old to have cache settings. Update it first."
+    return f"✕ Could not reach the API server.\n<code>{html.escape(str(err)[:150])}</code>"
+
+def build_cache_view_sync(notice: str = "") -> tuple[str, InlineKeyboardMarkup]:
+    back = InlineKeyboardMarkup([[InlineKeyboardButton("← Back", callback_data="admin_menu")]])
+    head = [f"<b>API CACHE</b>", ADMIN_RULE, f"<b>Server</b>  ● {html.escape(_active_server_name())}", ""]
+    try:
+        st = _cache_call("GET")
+    except Exception as e:
+        return "\n".join(head + [_cache_error_text(e)]), back
+    sett = st["settings"]
+    iv, times = sett["interval_minutes"], sett["times"]
+    lines = head
+    if notice:
+        lines += [notice, ""]
+    lines += [
+        f"<b>Every</b>      {f'{iv} min' if iv else '○ off'}",
+        f"<b>At times</b>   {' · '.join(times) if times else '○ none'}  <i>(Tehran)</i>",
+        f"<b>Next</b>       {_in(st.get('next_refresh'), st['now'])}",
+        "",
+    ]
+    for key in ("today", "tomorrow", "weekly", "yesterday"):
+        e = st["entries"][key]
+        dot = "●" if e["current"] else "○"
+        err = "  ✕ last try failed" if e.get("last_error") else ""
+        lines.append(f"{dot} <b>{CACHE_LABELS[key]}</b>  {_ago(e['age_seconds'])} · {e['records']} events{err}")
+    lines += ["", "<i>The bot always reads from this cache, so answers are instant. It survives restarts.</i>"]
+    row = lambda items: [InlineKeyboardButton(("● " if n == iv else "") + f"{n}m", callback_data=f"admincache_i_{n}") for n in items]
+    kb = [row(CACHE_INTERVALS[:3]), row(CACHE_INTERVALS[3:]) + [InlineKeyboardButton(("● " if not iv else "") + "Off", callback_data="admincache_i_0")],
+          [InlineKeyboardButton("＋ Set times", callback_data="admincache_times"),
+           InlineKeyboardButton("✕ Clear times", callback_data="admincache_clear")],
+          [InlineKeyboardButton("⟳ Refresh now", callback_data="admincache_now"),
+           InlineKeyboardButton("← Back", callback_data="admin_menu")]]
+    return "\n".join(lines), InlineKeyboardMarkup(kb)
+
+async def admin_cache_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """admin_cache (open) · admincache_i_<min> · admincache_times · admincache_clear · admincache_now"""
+    q = update.callback_query
+    if not is_admin(q.message.chat.id):
+        await q.answer("Admins only.", show_alert=True)
+        return
+    data = q.data
+    context.user_data.pop("awaiting", None)
+    notice, toast = "", None
+    try:
+        if data.startswith("admincache_i_"):
+            n = int(data.rsplit("_", 1)[1])
+            await asyncio.to_thread(_cache_call, "POST", "/settings", {"interval_minutes": n})
+            toast = f"✓ Every {n} min" if n else "○ Timed refresh is off"
+        elif data == "admincache_clear":
+            await asyncio.to_thread(_cache_call, "POST", "/settings", {"times": []})
+            toast = "✓ Fixed times cleared"
+        elif data == "admincache_now":
+            await asyncio.to_thread(_cache_call, "POST", "/refresh")
+            toast = "⟳ Refreshing… tap again in a few seconds"
+        elif data == "admincache_times":
+            context.user_data["awaiting"] = ADMIN_AWAIT_CACHE_TIMES
+            await q.answer()
+            await safe_edit(q.message,
+                "<b>FIXED REFRESH TIMES</b>\n" + ADMIN_RULE +
+                "\nSend the times (Tehran), any format, several at once:\n"
+                "<code>8:30 14:00 20:15</code>\n\nThe cache refreshes at each of these times, every day.",
+                InlineKeyboardMarkup([[InlineKeyboardButton("← Cancel", callback_data="admin_cache")]]))
+            return
+    except Exception as e:
+        await q.answer()
+        await safe_edit(q.message, _cache_error_text(e),
+                        InlineKeyboardMarkup([[InlineKeyboardButton("← Back", callback_data="admin_menu")]]))
+        return
+    await q.answer(toast)
+    text, kb = await asyncio.to_thread(build_cache_view_sync, notice)
+    await safe_edit(q.message, text, kb)
+
+async def admin_cache_times_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """The admin typed the fixed refresh times."""
+    parts = [x for x in re.split(r"[\s,،;]+", (update.message.text or "").strip()) if x]
+    times = [parse_hhmm(x) for x in parts]
+    if not parts or None in times:
+        bad = html.escape(parts[times.index(None)]) if parts and None in times else ""
+        await update.message.reply_text(
+            f"✕ Not a valid time{f': <code>{bad}</code>' if bad else ''}.\nSend like this: <code>8:30 14:00 20:15</code>",
+            parse_mode=ParseMode.HTML)   # still waiting
+        return
+    try:
+        await asyncio.to_thread(_cache_call, "POST", "/settings", {"times": sorted(set(times))})
+    except Exception as e:
+        context.user_data.pop("awaiting", None)
+        await update.message.reply_text(_cache_error_text(e), parse_mode=ParseMode.HTML)
+        return
+    context.user_data.pop("awaiting", None)
+    text, kb = await asyncio.to_thread(build_cache_view_sync, "✓ <b>Saved.</b>")
+    await update.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 def build_back_keyboard(to: str = "admin_menu") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("← Back", callback_data=to)]])
@@ -1810,7 +1857,7 @@ async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await context.bot.send_chat_action(chat_id=q.message.chat.id, action=ChatAction.UPLOAD_DOCUMENT)
     try:
         path = await asyncio.to_thread(bk.create_backup, "manual")
-        counts = await asyncio.to_thread(bk._table_counts, cfg.DB_PATH)
+        counts = await asyncio.to_thread(bk.live_table_counts)
     except bk.BackupError as e:
         await q.message.reply_text(f"✕ {e}")
         return
@@ -1940,11 +1987,12 @@ async def admin_restore_confirm_callback(update: Update, context: ContextTypes.D
     await q.answer("Restoring…")
     await q.message.edit_text("Restoring, hang on…")
     include_settings = action == "all"
+    restored_build_count = len(plan.builds)
     try:
         safety, settings_changed = await asyncio.to_thread(bk.apply_restore, plan, include_settings)
         ensure_db()              # add any tables/columns the old backup didn't have
         load_api_base_from_db()  # pick up the restored active server
-        counts = await asyncio.to_thread(bk._table_counts, cfg.DB_PATH)
+        counts = await asyncio.to_thread(bk.live_table_counts)
     except bk.BackupError as e:
         plan.cleanup()
         await q.message.edit_text(f"✕ Restore failed: {e}\nYour current data was not changed.")
@@ -1959,7 +2007,7 @@ async def admin_restore_confirm_callback(update: Update, context: ContextTypes.D
 
     text = (
         f"<b>RESTORE COMPLETE</b>\n{ADMIN_RULE}\n"
-        + (f"▤ Download files restored: {len(plan.builds)}\n\n" if plan.builds else "") +
+        + (f"▤ Download files restored: {restored_build_count}\n\n" if restored_build_count else "") +
         f"{_fmt_counts(counts)}\n\n"
         f"Active server: <code>{API_BASE}</code>\n"
     )
@@ -2094,8 +2142,15 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(context.user_data.get("awaiting") or "").startswith("rem_") and update.message.text:
         await reminders.on_text(update, context, get_user_language(update.effective_chat.id))
         return
-    if re.fullmatch(r"\s*\d{1,2}[:.]\d{2}\s*", (update.message.text or "").translate(
-            str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))) and parse_hhmm(update.message.text):
+    if (context.user_data.get("awaiting") == ADMIN_AWAIT_CACHE_TIMES and update.message.text
+            and is_admin(update.effective_chat.id)):
+        await admin_cache_times_input(update, context)
+        return
+    if context.user_data.get("awaiting") == AWAIT_BRIEF_TIME and update.message.text:
+        await brief_time_text(update, context)   # waiting for a time: parse it, or explain the right format
+        return
+    if re.fullmatch(r"\s*\d{1,2}\s*[:.٫/،,]\s*\d{1,2}\s*", (update.message.text or "").translate(
+            str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))) and parse_hhmm(update.message.text):
         await brief_time_text(update, context)   # a bare time like 16:53, even if the time screen was reset by a restart
         return
     if update.message.text:
@@ -2110,16 +2165,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
 
     # ---------- بررسی عضویت اولیه برای اطلاع به ادمین ----------
-    conn = sqlite3.connect(DB_PATH)
+    conn = _db()
     cur  = conn.cursor()
-    cur.execute("SELECT 1 FROM users WHERE chat_id = ?", (cid,))
-    first_time = cur.fetchone() is None
+    cur.execute("INSERT INTO users (chat_id) VALUES (?) ON CONFLICT DO NOTHING", (cid,))
+    first_time = cur.rowcount == 1
+    conn.commit()
 
     if first_time:
-        # ثبت کاربر به عنوان دیده‌شده
-        cur.execute("INSERT INTO users (chat_id) VALUES (?)", (cid,))
-        conn.commit()
-
         # ارسال پیام به ادمین
         user = update.effective_user
         # in the background: the user shouldn't wait for the admin message
@@ -2351,10 +2403,11 @@ async def digest_loop(context: ContextTypes.DEFAULT_TYPE):
             allowed = get_user_currencies(cid)
             impacts = get_user_impacts(cid)
             try:
-                events = await asyncio.to_thread(get_filtered_events, tz.endpoint_for("today", language, cid), allowed, impacts)
+                events = await asyncio.to_thread(get_events_with_retry, tz.endpoint_for("today", language, cid), allowed, impacts)
             except Exception:
-                logger.exception("Digest news fetch for %s failed", cid)
-                events = None
+                logger.exception("Digest news fetch for %s failed after 3 tries: nothing is sent", cid)
+                continue      # fetch failed: send NOTHING (no error message to the channel or the chat)
+            # events == [] is NOT a failure: news_pages() then builds the dedicated "no news" message
             texts = news_pages("today", events, allowed, impacts, language, get_cal(cid)["kinds"], cid=cid)
 
             connected = channels.get_channels(cid)
@@ -2404,9 +2457,9 @@ async def pre_news_loop(context: ContextTypes.DEFAULT_TYPE):
     upcoming = now + dt.timedelta(minutes=30)
     endpoint = "tomorrow" if upcoming.date() != now.date() else "today"
     try:
-        events = await asyncio.to_thread(get_filtered_events, endpoint,
+        events = await asyncio.to_thread(get_events_with_retry, endpoint,
                                          ["USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "CNY"],
-                                         list(IMPACTS))
+                                         list(IMPACTS), 3, (2, 4))
     except Exception:
         logger.exception("30-minute news alert fetch failed")
         return
@@ -2477,7 +2530,7 @@ async def pre_news_loop(context: ContextTypes.DEFAULT_TYPE):
                                                     menu_kb(language, cid) if target == cid else None)
                             with closing(_db()) as conn, conn:
                                 conn.executemany(
-                                    "INSERT OR IGNORE INTO pre_news_deliveries (chat_id, event_key, target_id, sent_date) VALUES (?, ?, ?, ?)",
+                                    "INSERT INTO pre_news_deliveries (chat_id, event_key, target_id, sent_date) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
                                     [(cid, key, target, upcoming.date().isoformat()) for key, _ in pending])
                             successes += 1
                         except (Forbidden, BadRequest) as exc:
@@ -2501,7 +2554,7 @@ async def pre_news_loop(context: ContextTypes.DEFAULT_TYPE):
                                                         menu_kb(language, cid))
                                 with closing(_db()) as conn, conn:
                                     conn.executemany(
-                                        "INSERT OR IGNORE INTO pre_news_deliveries (chat_id, event_key, target_id, sent_date) VALUES (?, ?, ?, ?)",
+                                        "INSERT INTO pre_news_deliveries (chat_id, event_key, target_id, sent_date) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
                                         [(cid, key, cid, upcoming.date().isoformat()) for key, _ in pending])
         except Exception:
             logger.exception("30-minute news alert delivery failed for %s", cid)
@@ -2679,6 +2732,9 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await ea_admin.handle_callback(update, context)
         return
+    if data == "admin_cache" or data.startswith("admincache_"):
+        await admin_cache_callback(update, context)
+        return
     if data in ("admin_servers", "admin_switch"):
         await admin_servers_callback(update, context)
         return
@@ -2818,7 +2874,7 @@ async def toggle_impact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def get_user_currencies(chat_id: int) -> list[str]:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _db()
         cur = conn.cursor()
         cur.execute("SELECT currencies FROM user_currencies WHERE chat_id = ?", (chat_id,))
         row = cur.fetchone()
@@ -2829,7 +2885,7 @@ def get_user_currencies(chat_id: int) -> list[str]:
 
 def set_user_currencies(chat_id: int, currencies: list[str]):
     cur_str = ",".join(sorted(set(currencies)))
-    conn = sqlite3.connect(DB_PATH)
+    conn = _db()
     cur = conn.cursor()
     cur.execute(
         """
@@ -2888,7 +2944,7 @@ async def notify_restart(application):
         return
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _db()
         cur = conn.cursor()
         cur.execute("SELECT chat_id FROM users")
         users = cur.fetchall()

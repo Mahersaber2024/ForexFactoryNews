@@ -10,7 +10,7 @@ from __future__ import annotations
 import calendar
 import html
 import re
-import sqlite3
+from bot import postgres as database
 import time as _time
 from contextlib import closing
 from datetime import date, datetime, time, timedelta
@@ -146,27 +146,11 @@ def parse_details(text: str) -> tuple[str, str] | None:
 
 # ───────────────  DB  ────────────────
 def _db():
-    return sqlite3.connect(cfg.DB_PATH, timeout=10)
+    return database.connect()
 
 
 def ensure_tables():
-    with closing(_db()) as conn, conn:
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS user_reminders (
-                   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                   chat_id    INTEGER NOT NULL,
-                   text       TEXT    NOT NULL,
-                   kind       TEXT    NOT NULL,          -- once | daily | weekly
-                   hhmm       TEXT    NOT NULL,
-                   on_date    TEXT,                      -- once: local date (YYYY-MM-DD) | monthly: 'jalali' / 'gregorian'
-                   weekday    INTEGER,                   -- weekly: 0 = Monday | monthly: day of month (1-31)
-                   tz         TEXT    NOT NULL,
-                   next_run   INTEGER,                   -- unix time (UTC) of the next send
-                   created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );""")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_reminders_next ON user_reminders(next_run)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_reminders_chat ON user_reminders(chat_id)")
-        conn.execute("""CREATE TABLE IF NOT EXISTS reminder_tz (chat_id INTEGER PRIMARY KEY, tz TEXT NOT NULL);""")
+    database.initialize()
 
 
 def get_tz(chat_id: int, lang: str) -> str:

@@ -4,7 +4,6 @@ instead of in the private chat. The bot must be an admin of the channel (Post Me
 """
 from __future__ import annotations
 
-import sqlite3
 import html
 import time
 
@@ -14,6 +13,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 import bot_settings as cfg
+from bot import postgres as database
 
 AWAIT_CHANNEL = "set_channel"
 DEFAULT_BOT_USERNAME = "ForexFactoryN_Bot"
@@ -23,26 +23,7 @@ _last_failure_notice = {}
 
 # ───────────────  DB  ────────────────
 def ensure_table():
-    conn = sqlite3.connect(cfg.DB_PATH)
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS user_channels (
-               chat_id    INTEGER PRIMARY KEY,
-               channel_id INTEGER NOT NULL,
-               title      TEXT,
-               username   TEXT
-        );"""
-    )
-    conn.execute("""CREATE TABLE IF NOT EXISTS user_channels_multi (
-        chat_id INTEGER NOT NULL, channel_id INTEGER NOT NULL,
-        title TEXT, username TEXT, PRIMARY KEY(chat_id, channel_id))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS channel_migrations (
-        name TEXT PRIMARY KEY)""")
-    if not conn.execute("SELECT 1 FROM channel_migrations WHERE name = 'multi_v1'").fetchone():
-        conn.execute("""INSERT OR IGNORE INTO user_channels_multi (chat_id, channel_id, title, username)
-                        SELECT chat_id, channel_id, title, username FROM user_channels""")
-        conn.execute("INSERT INTO channel_migrations(name) VALUES ('multi_v1')")
-    conn.commit()
-    conn.close()
+    database.initialize()
 
 
 def get_channel(chat_id: int) -> dict | None:
@@ -50,15 +31,15 @@ def get_channel(chat_id: int) -> dict | None:
     return channels[0] if channels else None
 
 def get_channels(chat_id: int) -> list[dict]:
-    conn = sqlite3.connect(cfg.DB_PATH)
-    rows = conn.execute("SELECT channel_id, title, username FROM user_channels_multi WHERE chat_id = ? ORDER BY rowid",
+    conn = database.connect()
+    rows = conn.execute("SELECT channel_id, title, username FROM user_channels_multi WHERE chat_id = ? ORDER BY sort_order",
                         (chat_id,)).fetchall()
     conn.close()
     return [{"id": row[0], "title": row[1], "username": row[2]} for row in rows]
 
 
 def set_channel(chat_id: int, channel_id: int, title: str, username: str | None):
-    conn = sqlite3.connect(cfg.DB_PATH)
+    conn = database.connect()
     conn.execute(
         """INSERT INTO user_channels_multi (chat_id, channel_id, title, username) VALUES (?, ?, ?, ?)
            ON CONFLICT(chat_id, channel_id) DO UPDATE SET
@@ -69,14 +50,11 @@ def set_channel(chat_id: int, channel_id: int, title: str, username: str | None)
 
 
 def remove_channel(chat_id: int, channel_id: int):
-    conn = sqlite3.connect(cfg.DB_PATH)
+    conn = database.connect()
     conn.execute("DELETE FROM user_channels_multi WHERE chat_id = ? AND channel_id = ?", (chat_id, channel_id))
     for table in ("channel_style_multi", "date_dest"):     # its news look and its calendar destination go with it
-        try:
-            col = "dest_id" if table == "date_dest" else "channel_id"
-            conn.execute(f"DELETE FROM {table} WHERE chat_id = ? AND {col} = ?", (chat_id, channel_id))
-        except sqlite3.OperationalError:
-            pass
+        col = "dest_id" if table == "date_dest" else "channel_id"
+        conn.execute(f"DELETE FROM {table} WHERE chat_id = ? AND {col} = ?", (chat_id, channel_id))
     conn.commit()
     conn.close()
 

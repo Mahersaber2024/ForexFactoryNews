@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-import sqlite3
+from bot import postgres as database
 from contextlib import closing
 from datetime import datetime
 
@@ -77,11 +77,12 @@ def fa_num(x) -> str:
 
 # ───────────────  the stored choice  ────────────────
 def _db():
-    return sqlite3.connect(cfg.DB_PATH, timeout=10)
+    return database.connect()
 
 
 def _ensure(conn) -> None:
-    conn.execute("CREATE TABLE IF NOT EXISTS reminder_tz (chat_id INTEGER PRIMARY KEY, tz TEXT NOT NULL)")
+    # Schema is initialized before the bot starts.
+    return None
 
 
 def auto_name(language: str) -> str:
@@ -97,7 +98,7 @@ def override(chat_id: int | None) -> str | None:
         with closing(_db()) as conn:
             _ensure(conn)
             row = conn.execute("SELECT tz FROM reminder_tz WHERE chat_id = ?", (chat_id,)).fetchone()
-    except sqlite3.Error:
+    except database.Error:
         return None
     return row[0] if row and row[0] in pytz.all_timezones_set else None
 
@@ -254,7 +255,7 @@ def all_overrides() -> dict[int, str]:
         with closing(_db()) as conn:
             _ensure(conn)
             rows = conn.execute("SELECT chat_id, tz FROM reminder_tz").fetchall()
-    except sqlite3.Error:
+    except database.Error:
         return {}
     return {int(c): n for c, n in rows if n in pytz.all_timezones_set}
 

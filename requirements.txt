@@ -2,6 +2,7 @@
 python-telegram-bot[job-queue]
 
 # Database & Time
+psycopg2-binary>=2.9,<3
 pytz
 
 # HTTP & Scraping

@@ -121,7 +121,11 @@ fi
 
 
 if [ ! -d "$APP_DIR/.git" ]; then
-  rm -rf "$APP_DIR"
+  if [ -e "$APP_DIR" ]; then
+    echo -e "${RED}$APP_DIR already exists but is not a Git checkout. Refusing to remove it.${NC}"
+    echo "Back up the existing installation and follow the manual migration guide."
+    exit 1
+  fi
   git clone --depth 1 "$REPO_URL" "$APP_DIR" || {
     echo -e "${RED}Git clone failed. Check repository URL.${NC}"
     exit 1
@@ -172,6 +176,27 @@ fi
   "ADMIN_CHAT_ID=$ADMIN_CHAT_ID" \
   "API_BASE_URL=$API_BASE_URL" \
   "SEND_RESTART_MSG=$SEND_RESTART_MSG"
+
+if [ "$RUN_BOT" = "true" ]; then
+  echo "Configure an existing, dedicated PostgreSQL database and user for this bot."
+  for key in DB_HOST DB_PORT DB_NAME DB_USER DB_SSLMODE; do
+    current=$("$APP_DIR/.venv/bin/python" "$APP_DIR/bot_settings.py" get "$key")
+    read -r -p "$key [$current]: " value
+    "$APP_DIR/.venv/bin/python" "$APP_DIR/bot_settings.py" set "$key=${value:-$current}"
+  done
+  read -rs -p "DB_PASSWORD (Enter keeps existing): " FFX_INSTALL_DB_PASSWORD
+  echo
+  if [ -n "$FFX_INSTALL_DB_PASSWORD" ]; then
+    export FFX_INSTALL_DB_PASSWORD
+    "$APP_DIR/.venv/bin/python" -c 'import os, bot_settings as c; v=c.read_env(); v["DB_PASSWORD"]=c.validate("DB_PASSWORD", os.environ["FFX_INSTALL_DB_PASSWORD"]); c.write_env(v)'
+    unset FFX_INSTALL_DB_PASSWORD
+  fi
+  if ! (cd "$APP_DIR" && .venv/bin/python -c 'from bot import postgres; postgres.initialize()'); then
+    echo -e "${RED}PostgreSQL setup or legacy migration is required before restarting the bot.${NC}"
+    echo "See README: stop the old bot, back up the data, and run python -m bot.migrate_sqlite."
+    exit 1
+  fi
+fi
 
 # Older installs used the generic names flask.service / telegram-bot.service: rename them (only this project's own units)
 if [ -f "$APP_DIR/scripts/rename-services.sh" ]; then

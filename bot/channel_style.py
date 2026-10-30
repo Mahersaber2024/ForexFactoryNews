@@ -8,7 +8,7 @@
 
 Settings live in channel_style_multi (chat_id, channel_id). A channel without its own row inherits the old
 per-user row (channel_style), so nothing changes for existing users until they touch a channel.
-Logos are BLOBs in the SQLite DB, so the normal backup / restore includes them.
+Logos are stored as PostgreSQL BYTEA, so the normal backup / restore includes them.
 The channel name is never drawn on the picture.
 
 Callback data (all start with "chs:"):
@@ -34,7 +34,6 @@ import html
 import io
 import logging
 import re
-import sqlite3
 import time
 from contextlib import closing
 
@@ -45,6 +44,7 @@ from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
 
 import bot_settings as cfg
+from bot import postgres as database
 from bot import calendar_image as ci
 from bot import channels
 
@@ -67,26 +67,14 @@ MONO_COLORS = [(("آبی", "Blue"), (37, 99, 235)), (("بنفش", "Violet"), (12
 
 # ───────────────  DB  ────────────────
 def ensure_table():
-    with closing(sqlite3.connect(cfg.DB_PATH, timeout=10)) as conn, conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS channel_style (
-            chat_id INTEGER PRIMARY KEY,
-            mode    TEXT NOT NULL DEFAULT 'text',
-            theme   TEXT NOT NULL DEFAULT 'aurora',
-            logo    BLOB)""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS channel_style_multi (
-            chat_id    INTEGER NOT NULL,
-            channel_id INTEGER NOT NULL,
-            mode       TEXT NOT NULL DEFAULT 'text',
-            theme      TEXT NOT NULL DEFAULT 'timeline',
-            logo       BLOB,
-            PRIMARY KEY (chat_id, channel_id))""")
+    database.initialize()
 
 
 def get_style(chat_id: int, channel_id: int | None = None, blobs: bool = False) -> dict:
     """Style of one channel (falls back to the user's old shared style, then to the defaults)."""
     cols = "mode, theme, logo" if blobs else "mode, theme, logo IS NOT NULL"
     row = None
-    with closing(sqlite3.connect(cfg.DB_PATH, timeout=10)) as conn:
+    with closing(database.connect()) as conn:
         if channel_id is not None:
             row = conn.execute(f"SELECT {cols} FROM channel_style_multi WHERE chat_id = ? AND channel_id = ?",
                                (chat_id, channel_id)).fetchone()
@@ -108,13 +96,13 @@ def style_key(chat_id: int, channel_id: int) -> tuple:
 
 def _set(chat_id: int, channel_id: int, **fields):
     assert set(fields) <= {"mode", "theme", "logo"}
-    with closing(sqlite3.connect(cfg.DB_PATH, timeout=10)) as conn, conn:
+    with closing(database.connect()) as conn, conn:
         # first edit of a channel: start from what it used so far (the old shared style)
         if channel_id != CAL_ID:
-            conn.execute("""INSERT OR IGNORE INTO channel_style_multi (chat_id, channel_id, mode, theme, logo)
-                            SELECT ?, ?, mode, theme, logo FROM channel_style WHERE chat_id = ?""",
+            conn.execute("""INSERT INTO channel_style_multi (chat_id, channel_id, mode, theme, logo)
+                            SELECT ?, ?, mode, theme, logo FROM channel_style WHERE chat_id = ? ON CONFLICT DO NOTHING""",
                          (chat_id, channel_id, chat_id))
-        conn.execute("INSERT OR IGNORE INTO channel_style_multi (chat_id, channel_id) VALUES (?, ?)",
+        conn.execute("INSERT INTO channel_style_multi (chat_id, channel_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
                      (chat_id, channel_id))
         for col, val in fields.items():
             conn.execute(f"UPDATE channel_style_multi SET {col} = ? WHERE chat_id = ? AND channel_id = ?",
@@ -124,10 +112,10 @@ def _set(chat_id: int, channel_id: int, **fields):
 def forget(chat_id: int, channel_id: int):
     """Called when a channel is disconnected."""
     try:
-        with closing(sqlite3.connect(cfg.DB_PATH, timeout=10)) as conn, conn:
+        with closing(database.connect()) as conn, conn:
             conn.execute("DELETE FROM channel_style_multi WHERE chat_id = ? AND channel_id = ?",
                          (chat_id, channel_id))
-    except sqlite3.OperationalError:
+    except database.Error:
         pass
 
 
