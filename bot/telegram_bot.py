@@ -1251,7 +1251,7 @@ def get_filtered_events(endpoint: str, allowed_currencies: list[str],
     impacts = impacts or ["High"]
     try:
         # Old API servers ignore ?impact= and return High only, which is still correct for High
-        response = requests.get(f"{API_BASE}/{endpoint}", params={"impact": ",".join(impacts).lower()}, timeout=25)
+        response = requests.get(f"{API_BASE}/{endpoint}", params={"impact": ",".join(impacts).lower()}, timeout=75)
         response.raise_for_status()  # بررسی خطاهای HTTP
         data = fill_missing_times(response.json())
         return [ev for ev in data

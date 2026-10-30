@@ -79,7 +79,7 @@ meta(){
       P_LEGACY_SERVICES="flask telegram-bot"
       P_STATE_FILE=""
       P_DEFAULT_DIR="/opt/forexfactory-api"
-      P_INSTALLER_URL="$RAW_BASE/High-Impact-News-Forex-Factory/main/scripts/install.sh"
+      P_INSTALLER_URL="$RAW_BASE/ForexFactoryNews/main/scripts/install.sh"
       P_INSTALLER_REL="scripts/install.sh"
       P_PORTS="45869"
       ;;

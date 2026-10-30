@@ -2,7 +2,7 @@
 set -e
 
 APP_DIR="/opt/forexfactory-api"
-REPO_URL="https://github.com/Mahersaber2024/High-Impact-News-Forex-Factory.git"
+REPO_URL="https://github.com/Mahersaber2024/ForexFactoryNews.git"
 SERVICE_USER="root"
 
 GREEN='\033[0;32m'

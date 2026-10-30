@@ -125,7 +125,9 @@ def tomorrow_data():
 def yesterday_data():
     yesterday = ny_now() - timedelta(days=1)
     if cache["yesterday"].get("for_date") == yesterday.date() and is_cache_valid(cache["yesterday"]["last_update"], "yesterday"):
+        logging.info("Returning cached data for yesterday.")
         return _respond(cache["yesterday"]["data"])
+    logging.info("Fetching new data for yesterday.")
     records = getRecords(getURL(yesterday, 'day'), yesterday, ALL_IMPACTS)
     cache["yesterday"] = {"data": records, "last_update": datetime.now(), "for_date": yesterday.date()}
     return _respond(records)

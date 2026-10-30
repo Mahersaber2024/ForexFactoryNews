@@ -52,13 +52,13 @@ Installed to `/opt/forexfactory-api`. `Dockerfile` and `envshowrun` were removed
 ## Quick Install
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Mahersaber2024/High-Impact-News-Forex-Factory/main/scripts/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Mahersaber2024/ForexFactoryNews/main/scripts/install.sh)
 ```
 
 ## Manager (status / conflict check / install / update / uninstall)
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Mahersaber2024/High-Impact-News-Forex-Factory/main/manager.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Mahersaber2024/ForexFactoryNews/main/manager.sh)
 ```
 
 ## Installer Prompts
@@ -85,6 +85,7 @@ If you press Enter on the domain question, the site and API are served on the se
 
 ## API Endpoints
 
+- `/api/forex/yesterday`
 - `/api/forex/today`
 - `/api/forex/tomorrow`
 - `/api/forex/weekly`
@@ -191,6 +192,7 @@ You don't have to run the Flask API and the Telegram bot on the same machine. A 
 - **Server A (data server)**: run the installer, choose mode **1) Flask only**, and give it the domain `iran.heysolo.ir`. This exposes:
 
 ```text
+https://iran.heysolo.ir/api/forex/yesterday
 https://iran.heysolo.ir/api/forex/today
 https://iran.heysolo.ir/api/forex/tomorrow
 https://iran.heysolo.ir/api/forex/weekly
@@ -376,7 +378,7 @@ curl -A Mozilla -I https://news.example.com/api/forex/today
 To completely remove the application and all installed services:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Mahersaber2024/High-Impact-News-Forex-Factory/main/scripts/uninstall.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Mahersaber2024/ForexFactoryNews/main/scripts/uninstall.sh)
 ```
 
 The uninstall script will:
