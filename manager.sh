@@ -504,7 +504,12 @@ cmd_fix_renewal(){
 # Menu
 # ---------------------------------------------------------------
 pick_project(){
-  echo "  1) JadeTunnel sales"; echo "  2) Terminal Bot"; echo "  3) Forex Factory (API + Bot)"
+  # menu text goes to stderr: callers capture stdout with $(pick_project)
+  {
+    echo "  1) JadeTunnel sales"
+    echo "  2) Terminal Bot"
+    echo "  3) Forex Factory (API + Bot)"
+  } >&2
   read -rp "Project [1-3]: " n
   case "$n" in 1) echo jade;; 2) echo term;; 3) echo forex;; *) echo "";; esac
 }
