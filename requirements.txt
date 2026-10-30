@@ -1,0 +1,20 @@
+# Core dependencies
+python-telegram-bot[job-queue]
+
+# Database & Time
+pytz
+
+# HTTP & Scraping
+requests
+cloudscraper
+beautifulsoup4
+
+# Data processing
+pandas
+
+# Pictures (calendar / news images). Persian text also needs the system library libraqm (install.sh does this)
+Pillow
+fonttools
+
+# Web
+Flask
