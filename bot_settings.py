@@ -27,7 +27,6 @@ import sys
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env"
 DATA_DIR = BASE_DIR / "data"
-BACKUP_DIR = DATA_DIR / "backups"
 
 # Website (lives in this repo, served by nginx) and the folder the bot uploads EA builds into
 SITE_DIR = BASE_DIR / "website" / "content"
@@ -46,7 +45,6 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "ADMIN_CHAT_ID":      ("0",     "Admin chat ID (send /myid to the bot to find it)", False),
     "API_BASE_URL":       ("http://127.0.0.1:45869/api/forex", "Flask API base URL the bot uses", False),
     "SEND_RESTART_MSG":   ("false", "Notify all users when the bot restarts (true/false)", False),
-    "BACKUP_KEEP":        ("10",    "How many backup files to keep on disk", False),
     "DB_HOST":            ("127.0.0.1", "PostgreSQL host", False),
     "DB_PORT":            ("5432", "PostgreSQL port", False),
     "DB_NAME":            ("forexfactory", "Dedicated PostgreSQL database", False),
@@ -56,7 +54,7 @@ FIELDS: dict[str, tuple[str, str, bool]] = {
     "CACHE_ADMIN_TOKEN":  ("",      "Secret that lets the bot's admin panel change the API cache settings (same value on the API server and the bot; empty = only same-machine access)", True),
 }
 BOOL_KEYS = {"RUN_FLASK", "FLASK_DEBUG", "RUN_BOT", "SEND_RESTART_MSG"}
-INT_KEYS = {"FLASK_PORT", "ADMIN_CHAT_ID", "BACKUP_KEEP", "DB_PORT"}
+INT_KEYS = {"FLASK_PORT", "ADMIN_CHAT_ID", "DB_PORT"}
 
 
 # ───────────────  .env read / write  ────────────────
@@ -144,7 +142,7 @@ def reload() -> None:
     """(Re)load config from .env into module-level constants."""
     global RUN_FLASK, FLASK_HOST, FLASK_PORT, FLASK_DEBUG, PUBLIC_BASE_URL
     global RUN_BOT, TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, API_BASE_URL
-    global SEND_RESTART_MSG, BACKUP_KEEP, CACHE_ADMIN_TOKEN
+    global SEND_RESTART_MSG, CACHE_ADMIN_TOKEN
     global DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE
     v = read_env()
     RUN_FLASK = _as_bool(_get(v, "RUN_FLASK"))
@@ -157,7 +155,6 @@ def reload() -> None:
     ADMIN_CHAT_ID = _as_int(_get(v, "ADMIN_CHAT_ID"), 0)
     API_BASE_URL = _get(v, "API_BASE_URL").rstrip("/")
     SEND_RESTART_MSG = _as_bool(_get(v, "SEND_RESTART_MSG"))
-    BACKUP_KEEP = max(1, _as_int(_get(v, "BACKUP_KEEP"), 10))
     CACHE_ADMIN_TOKEN = _get(v, "CACHE_ADMIN_TOKEN").strip()
     DB_HOST = _get(v, "DB_HOST")
     DB_PORT = _as_int(_get(v, "DB_PORT"), 5432)
@@ -168,7 +165,6 @@ def reload() -> None:
 
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 reload()
 
 
@@ -273,7 +269,7 @@ def cmd_setup(_args) -> int:
         if values["RUN_FLASK"] == "true":
             api_default = f"http://127.0.0.1:{values.get('FLASK_PORT', '45869')}/api/forex"
         values["API_BASE_URL"] = _ask("API_BASE_URL", api_default)
-        for k in ("SEND_RESTART_MSG", "BACKUP_KEEP"):
+        for k in ("SEND_RESTART_MSG",):
             values[k] = _ask(k, cur(k))
 
 
