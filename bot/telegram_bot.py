@@ -1824,7 +1824,7 @@ async def admin_log_group_input(update: Update, context: ContextTypes.DEFAULT_TY
 
 # ───────────────  Admin: API cache  ─────────────
 ADMIN_AWAIT_CACHE_TIMES = "admin_cache_times"
-CACHE_INTERVALS = (2, 5, 10, 15, 30, 60)
+CACHE_INTERVALS = (60, 120, 180, 240, 360, 720)     # minutes (the API stores minutes); shown as hours
 CACHE_LABELS = {"today": "Today", "tomorrow": "Tomorrow", "weekly": "Week", "yesterday": "Yesterday"}
 
 def _cache_call(method: str, path: str = "", body: dict | None = None) -> dict:
@@ -1867,6 +1867,14 @@ def _cache_error_text(err: Exception) -> str:
         return "✕ This API server is too old to have cache settings. Update it first."
     return f"✕ Could not reach the API server.\n<code>{html.escape(str(err)[:150])}</code>"
 
+def _fmt_interval(minutes: int) -> str:
+    """120 -> '2 h', 90 -> '1.5 h', 45 -> '45 min' (old saved values still display correctly)."""
+    if minutes % 60 == 0:
+        return f"{minutes // 60} h"
+    if minutes > 60:
+        return f"{minutes / 60:.1f} h"
+    return f"{minutes} min"
+
 def build_cache_view_sync(notice: str = "") -> tuple[str, InlineKeyboardMarkup]:
     back = InlineKeyboardMarkup([[InlineKeyboardButton("← Back", callback_data="admin_menu")]])
     head = [f"<b>API CACHE</b>", ADMIN_RULE, f"<b>Server</b>  ● {html.escape(_active_server_name())}", ""]
@@ -1880,7 +1888,7 @@ def build_cache_view_sync(notice: str = "") -> tuple[str, InlineKeyboardMarkup]:
     if notice:
         lines += [notice, ""]
     lines += [
-        f"<b>Every</b>      {f'{iv} min' if iv else '○ off'}",
+        f"<b>Every</b>      {_fmt_interval(iv) if iv else '○ off'}",
         f"<b>At times</b>   {' · '.join(times) if times else '○ none'}  <i>(Tehran)</i>",
         f"<b>Next</b>       {_in(st.get('next_refresh'), st['now'])}",
         "",
@@ -1891,7 +1899,7 @@ def build_cache_view_sync(notice: str = "") -> tuple[str, InlineKeyboardMarkup]:
         err = "  ✕ last try failed" if e.get("last_error") else ""
         lines.append(f"{dot} <b>{CACHE_LABELS[key]}</b>  {_ago(e['age_seconds'])} · {e['records']} events{err}")
     lines += ["", "<i>The bot always reads from this cache, so answers are instant. It survives restarts.</i>"]
-    row = lambda items: [InlineKeyboardButton(("● " if n == iv else "") + f"{n}m", callback_data=f"admincache_i_{n}") for n in items]
+    row = lambda items: [InlineKeyboardButton(("● " if n == iv else "") + _fmt_interval(n), callback_data=f"admincache_i_{n}") for n in items]
     kb = [row(CACHE_INTERVALS[:3]), row(CACHE_INTERVALS[3:]) + [InlineKeyboardButton(("● " if not iv else "") + "Off", callback_data="admincache_i_0")],
           [InlineKeyboardButton("＋ Set times", callback_data="admincache_times"),
            InlineKeyboardButton("✕ Clear times", callback_data="admincache_clear")],
@@ -1912,7 +1920,7 @@ async def admin_cache_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         if data.startswith("admincache_i_"):
             n = int(data.rsplit("_", 1)[1])
             await asyncio.to_thread(_cache_call, "POST", "/settings", {"interval_minutes": n})
-            toast = f"✓ Every {n} min" if n else "○ Timed refresh is off"
+            toast = f"✓ Every {_fmt_interval(n)}" if n else "○ Timed refresh is off"
         elif data == "admincache_clear":
             await asyncio.to_thread(_cache_call, "POST", "/settings", {"times": []})
             toast = "✓ Fixed times cleared"
