@@ -1,0 +1,4 @@
+Carlito: SIL Open Font License 1.1 (Google / Lukasz Dziedzic)
+Liberation Serif: SIL Open Font License 1.1 (Red Hat)
+DejaVu Sans / Sans Mono: Bitstream Vera / DejaVu free licence (permits redistribution)
+Vazirmatn: SIL Open Font License 1.1 (Saber Rastikerdar), downloaded at install time
