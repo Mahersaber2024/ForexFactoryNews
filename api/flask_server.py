@@ -42,7 +42,7 @@ KEYS = ("today", "tomorrow", "weekly", "yesterday")
 SCHEDULED_KEYS = ("today", "tomorrow", "weekly")   # yesterday is only re-read when the day changes
 CACHE_FILE = cfg.DATA_DIR / "api_cache.json"
 SETTINGS_FILE = cfg.DATA_DIR / "api_cache_settings.json"
-DEFAULT_SETTINGS = {"interval_minutes": 5, "times": []}   # 5 min = the old behaviour
+DEFAULT_SETTINGS = {"interval_minutes": 120, "times": []}   # 120 min = every 2 hours
 RETRY_AFTER = 60          # seconds to wait after a failed refresh before trying again
 TICK = 20                 # how often the scheduler looks at the cache
 
