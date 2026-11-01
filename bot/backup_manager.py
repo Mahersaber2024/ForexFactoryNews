@@ -6,8 +6,11 @@ A backup is a .zip containing:
     forexbot.json   → portable JSON snapshot of PostgreSQL application data
     settings.env    → copy of .env (bot token, admin id, API url, ...)
 
-Restore accepts one of these .zip files. Every restore first saves a "pre-restore"
-safety backup, so a bad restore can always be undone from the admin panel.
+Backups are NEVER kept on the server. create_backup() builds the zip in a private temporary
+folder, the bot sends it to the admin in Telegram and then deletes it (discard_backup).
+
+Restore accepts one of these .zip files. Every restore first makes a "pre-restore" safety backup,
+which is sent to the admin in Telegram and deleted from the server right after.
 """
 from __future__ import annotations
 
@@ -36,7 +39,6 @@ BUILD_EXT = (".ex5", ".ex4")             # kept for compatibility
 BLOCKED_EXT = (".html", ".htm", ".xhtml", ".svg", ".js", ".mjs", ".php", ".phtml", ".cgi", ".py", ".sh", ".htaccess")
 REQUIRED_TABLES = {"subscribers"}          # minimum for a backup to be considered valid
 MAX_RESTORE_BYTES = 20 * 1024 * 1024       # Telegram bot API download limit
-NAME_RE = re.compile(r"^backup-\d{8}-\d{6}-[a-z\-]+\.zip$")
 
 
 class BackupError(Exception):
@@ -101,49 +103,55 @@ def _parse_env_text(text: str) -> dict[str, str]:
 
 # ───────────────  create  ────────────────
 def create_backup(label: str = "manual") -> Path:
-    """Create a full backup zip in data/backups and return its path."""
+    """Create a full backup zip in a private temporary folder and return its path.
+    The caller must delete it with discard_backup() as soon as it has been delivered."""
     label = re.sub(r"[^a-z\-]", "", label.lower()) or "manual"
-    cfg.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    cfg.BACKUP_DIR.chmod(0o700)
-    out = cfg.BACKUP_DIR / f"backup-{_now_stamp()}-{label}.zip"
-    n = 1
-    while out.exists():                      # two backups in the same second
-        out = cfg.BACKUP_DIR / f"backup-{_now_stamp()}-{label}{'-' * n}.zip"
-        n += 1
-
-    with tempfile.TemporaryDirectory() as td:
-        snap = Path(td) / ZIP_DB
-        try:
-            counts = snapshot.export_snapshot(snap)
-        except Exception as exc:
-            raise BackupError(f"PostgreSQL backup failed: {exc}") from exc
-        builds = _build_files()
-        manifest = {
-            "app": APP_ID,
-            "format": BACKUP_FORMAT,
-            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "label": label,
-            "tables": counts,
-            "includes_settings": cfg.ENV_FILE.exists(),
-            "ea_builds": [b.name for b in builds],
-        }
-        fd, temporary = tempfile.mkstemp(prefix=".backup-", suffix=".part", dir=cfg.BACKUP_DIR)
-        tmp_zip = Path(temporary)
-        try:
-            with os.fdopen(fd, "w+b") as tmp_handle:
-                with zipfile.ZipFile(tmp_handle, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                    zf.writestr(ZIP_MANIFEST, json.dumps(manifest, indent=2, ensure_ascii=False))
-                    zf.write(snap, ZIP_DB)
-                    if cfg.ENV_FILE.exists():
-                        zf.write(cfg.ENV_FILE, ZIP_ENV)
-                    for f in builds:
-                        zf.write(f, ZIP_BUILDS + f.name)
-            tmp_zip.replace(out)
-        finally:
-            tmp_zip.unlink(missing_ok=True)
-
-    prune_backups()
+    out_dir = Path(tempfile.mkdtemp(prefix="forexbot-backup-"))
+    out_dir.chmod(0o700)
+    out = out_dir / f"backup-{_now_stamp()}-{label}.zip"
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            snap = Path(td) / ZIP_DB
+            try:
+                counts = snapshot.export_snapshot(snap)
+            except Exception as exc:
+                raise BackupError(f"PostgreSQL backup failed: {exc}") from exc
+            builds = _build_files()
+            manifest = {
+                "app": APP_ID,
+                "format": BACKUP_FORMAT,
+                "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "label": label,
+                "tables": counts,
+                "includes_settings": cfg.ENV_FILE.exists(),
+                "ea_builds": [b.name for b in builds],
+            }
+            with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr(ZIP_MANIFEST, json.dumps(manifest, indent=2, ensure_ascii=False))
+                zf.write(snap, ZIP_DB)
+                if cfg.ENV_FILE.exists():
+                    zf.write(cfg.ENV_FILE, ZIP_ENV)
+                for f in builds:
+                    zf.write(f, ZIP_BUILDS + f.name)
+        out.chmod(0o600)
+    except Exception:
+        discard_backup(out)
+        raise
     return out
+
+
+def discard_backup(path: Path | None) -> None:
+    """Delete a backup made by create_backup (the file and its private temporary folder)."""
+    if path is None:
+        return
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError:
+        pass
+    try:
+        Path(path).parent.rmdir()
+    except OSError:
+        pass
 
 
 def _build_files() -> list[Path]:
@@ -152,34 +160,6 @@ def _build_files() -> list[Path]:
     if not d.is_dir():
         return []
     return sorted(p for p in d.iterdir() if p.is_file() and not p.name.startswith("."))
-
-
-def list_backups() -> list[Path]:
-    if not cfg.BACKUP_DIR.exists():
-        return []
-    files = [p for p in cfg.BACKUP_DIR.glob("backup-*.zip") if p.is_file()]
-    return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
-
-
-def prune_backups(keep: int | None = None) -> None:
-    keep = keep or cfg.BACKUP_KEEP
-    for old in list_backups()[keep:]:
-        old.unlink(missing_ok=True)
-
-
-def resolve_backup_name(name: str) -> Path | None:
-    """Safely map a button payload back to a file in BACKUP_DIR (no path traversal)."""
-    if not NAME_RE.match(name):
-        return None
-    p = (cfg.BACKUP_DIR / name).resolve()
-    if p.parent != cfg.BACKUP_DIR.resolve() or not p.is_file():
-        return None
-    return p
-
-
-def describe(path: Path) -> str:
-    size_kb = path.stat().st_size / 1024
-    return f"{path.name} ({size_kb:.1f} KB)"
 
 
 # ───────────────  restore  ────────────────
@@ -251,38 +231,43 @@ def apply_restore(plan: RestorePlan, include_settings: bool = False) -> tuple[Pa
     """
     Restore the staged backup into the live DB (and optionally .env).
     Download files in the backup are copied back into the downloads folder (existing files are kept).
-    Returns (safety_backup_path, settings_changed).
+    Returns (safety_backup_path, settings_changed). The caller sends the safety file to the admin and
+    then deletes it with discard_backup().
     """
     safety = create_backup("pre-restore")
     try:
-        snapshot.import_snapshot(plan.db_file, replace=True)
-    except Exception as exc:
-        raise BackupError(f"PostgreSQL restore failed and was rolled back: {exc}") from exc
+        try:
+            snapshot.import_snapshot(plan.db_file, replace=True)
+        except Exception as exc:
+            raise BackupError(f"PostgreSQL restore failed and was rolled back: {exc}") from exc
 
-    settings_changed = False
-    if include_settings and plan.env_values:
-        current = cfg.read_env()
-        new_values = dict(plan.env_values)
-        # Keep the current PostgreSQL target; an old backup may have no DB credentials.
-        for key in ("DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSLMODE"):
-            if key in current:
-                new_values[key] = current[key]
-            else:
-                new_values.pop(key, None)
-        # Never wipe a working token / admin with an empty value from the backup
-        for key in ("TELEGRAM_BOT_TOKEN", "ADMIN_CHAT_ID"):
-            if not new_values.get(key) and current.get(key):
-                new_values[key] = current[key]
-        settings_changed = new_values != current
-        cfg.write_env(new_values)
-        cfg.reload()
+        settings_changed = False
+        if include_settings and plan.env_values:
+            current = cfg.read_env()
+            new_values = dict(plan.env_values)
+            # Keep the current PostgreSQL target; an old backup may have no DB credentials.
+            for key in ("DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSLMODE"):
+                if key in current:
+                    new_values[key] = current[key]
+                else:
+                    new_values.pop(key, None)
+            # Never wipe a working token / admin with an empty value from the backup
+            for key in ("TELEGRAM_BOT_TOKEN", "ADMIN_CHAT_ID"):
+                if not new_values.get(key) and current.get(key):
+                    new_values[key] = current[key]
+            settings_changed = new_values != current
+            cfg.write_env(new_values)
+            cfg.reload()
 
-    if plan.builds and cfg.DOWNLOADS_DIR.parent.is_dir():
-        cfg.DOWNLOADS_DIR.mkdir(exist_ok=True)
-        for b in plan.builds:
-            dest = cfg.DOWNLOADS_DIR / b.name
-            shutil.copyfile(b, dest)
-            dest.chmod(0o644)
+        if plan.builds and cfg.DOWNLOADS_DIR.parent.is_dir():
+            cfg.DOWNLOADS_DIR.mkdir(exist_ok=True)
+            for b in plan.builds:
+                dest = cfg.DOWNLOADS_DIR / b.name
+                shutil.copyfile(b, dest)
+                dest.chmod(0o644)
+    except Exception:
+        discard_backup(safety)       # nothing is left behind on the server
+        raise
 
     plan.cleanup()
     return safety, settings_changed

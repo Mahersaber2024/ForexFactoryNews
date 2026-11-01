@@ -22,11 +22,16 @@ import bot_settings as cfg
 from bot import backup_manager as bk
 from bot import ea_admin
 from bot import channels
+from bot import logger_bot as logs
+from bot import blurbs
 from bot import channel_style
 from bot import calendar_image
 from bot import font_setup
 from bot import tz
 from bot import reminders
+from bot import locales
+from bot import language as i18n
+from bot import image_locale
 from db import postgres as database
 from telegram.error import Forbidden, BadRequest
 
@@ -49,6 +54,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     TypeHandler,
+    ApplicationHandlerStop,
     filters,
     ContextTypes,
 )
@@ -56,13 +62,20 @@ from telegram.constants import ChatAction, ParseMode
 
 FA_COMMANDS = [
     BotCommand("start", "منوی اصلی"),
-    BotCommand("help", "راهنما"),
+    BotCommand("language", "زبان"),
 ]
 
 EN_COMMANDS = [
     BotCommand("start", "Main menu"),
-    BotCommand("help", "Help"),
+    BotCommand("language", "Language"),
 ]
+
+# The "/" command menu follows the language of the Telegram app (Telegram language codes are two letters)
+# code: (start / main menu, language)
+OTHER_COMMANDS = {
+    "hi": ("मुख्य मेनू", "भाषा"), "ru": ("Главное меню", "Язык"), "id": ("Menu utama", "Bahasa"),
+    "pt": ("Menu principal", "Idioma"), "vi": ("Menu chính", "Ngôn ngữ"),
+}
 
 async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -71,10 +84,24 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if language not in LANGS:
         await q.answer()
         return
-    set_user_language(cid, language)
-    toast = {'fa': "✓ زبان: فارسی", 'en': "✓ Language: English"}
-    await q.answer(toast[language] + " · 🌍 " + tz.status_label(language, cid))
-    await safe_edit(q.message, main_menu_text(language, cid), main_menu_keyboard(language, cid))
+    if not set_user_language(cid, language):
+        await q.answer(i18n.t(language, "Could not save language. Please try again."), show_alert=True)
+        return
+    await q.answer("✓ " + locales.LANGUAGE_NAMES[language] + " · 🌍 " + tz.status_label(language, cid))
+    picker = q.message
+    if context.user_data.pop("fresh_start", False):
+        await show_welcome(picker, context, cid, language, q.from_user.first_name)   # first /start: welcome screen
+    else:
+        await show_main_menu_in_place(picker, context, cid, language)   # new menu carries the bottom keyboard
+    if context.user_data.pop("after_lang", None) == "calendar":
+        cal_text, cal_kb = calendar_panel(language, cid)
+        await picker.reply_text(cal_text, reply_markup=cal_kb, parse_mode=ParseMode.HTML)
+    logs.fire(logs.log_user_activity(context.bot, cid, "Language selected", locales.LANGUAGE_NAMES[language],
+                                     q.from_user.username, q.from_user.first_name, q.from_user.last_name))
+    try:
+        await picker.delete()                                       # picker replaced: still one message
+    except Exception:
+        pass
 
 import logging
 
@@ -85,7 +112,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # در توابعی که خطا را نادیده می‌گیرید، لاگ کنید
-LANGS = ("fa", "en")
+LANGS = tuple(locales.LANGUAGE_NAMES)
+# shown before / while a language is chosen: the request in every language of the bot
+LANGUAGE_PROMPT = "\n".join(["Please select your language:", "لطفاً زبان خود را انتخاب کنید:"]
+                           + [locales.NEWS[_l]["select_language"] + ":" for _l in locales.NEW])
 
 def _db():
     return database.connect()
@@ -105,7 +135,8 @@ def get_user_language(chat_id: int, tg_language_code: str | None = None) -> str:
     stored = get_stored_language(chat_id)
     if stored:
         return stored
-    return "fa" if (tg_language_code or "").lower().startswith("fa") else "en"
+    code = (tg_language_code or "").lower().replace("_", "-").split("-")[0]
+    return {"fa": "fa", "hi": "hi", "ru": "ru", "id": "id", "pt": "pt-BR", "vi": "vi"}.get(code, "en")
 
 def set_user_language(chat_id: int, language: str):
     # Picking a language must NOT switch the Daily High-Impact News on (it used to insert a "subscribed" row)
@@ -120,8 +151,10 @@ def set_user_language(chat_id: int, language: str):
                 (chat_id, language)
             )
         tz.on_language_change(chat_id, language)      # an automatic time zone just moved with the language
+        return True
     except Exception as e:
         logger.error(f"Error in set_user_language for chat_id {chat_id}: {e}")
+        return False
     
 def _all_languages() -> dict[int, str]:
     """{chat_id: stored language} in ONE read (the 30-second loops look at every user)."""
@@ -234,13 +267,14 @@ def delete_api_server(name: str) -> bool:
     return deleted
 
 DEFAULT_BRIEF_TIME = "07:00"
+DIGEST_GRACE_MIN = 10   # the daily news may start up to this many minutes after the set time (never before it)
 
 def load_subs() -> dict[int, str]:
     """chat_id → time, only for users whose Daily High-Impact News is on."""
     try:
         with closing(_db()) as conn:
             rows = conn.execute("SELECT chat_id, digest_time FROM subscribers WHERE digest_on = 1").fetchall()
-        return {int(cid): (t or DEFAULT_BRIEF_TIME) for cid, t in rows}
+        return {int(cid): (t or DEFAULT_BRIEF_TIME) for cid, t in rows if int(cid) not in BANNED}
     except Exception as e:
         logger.error(f"Error in load_subs: {e}")
         return {}
@@ -340,6 +374,8 @@ async def send_typing(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, delay: float
 
 # ───────────────  UI texts  ─────────────
 BRIEF_NAME = {'fa': "دریافت روزانه اخبار مهم", 'en': "Daily High-Impact News"}
+for _lang in locales.NEW:
+    BRIEF_NAME[_lang] = i18n.t(_lang, BRIEF_NAME['en'])
 
 UI = {
     'fa': {
@@ -420,6 +456,13 @@ UI = {
     },
 }
 
+for _lang, _tr in locales.TEXT.items():
+    UI[_lang] = dict(i18n.table(_lang, UI["en"]), yesterday=_tr["yesterday"], today=_tr["today"],
+                     tomorrow=_tr["tomorrow"], week=_tr["week"], currencies="⇄ " + _tr["select"],
+                     brief_btn_on="◉ " + _tr["auto_send"] + ": {time}",
+                     brief_btn_off="◌ " + _tr["auto_send"] + ": " + _tr["off"],
+                     channel="◈ " + _tr["channel"], back="‹ " + _tr["back"], p_all_cur=_tr["all"])
+
 def without_date_entities(text: str) -> str:
     """Keep event names if Telegram rejects date entities inside a quote."""
     return re.sub(r'<tg-time unix="\d+">(.*?)</tg-time>', r'\1', text, flags=re.DOTALL)
@@ -461,12 +504,15 @@ async def send_news_message(bot, target, text: str, kb=None):
 # ───────────────  ▭ Keyboard under the input box: ▥ Economic News · ▦ Calendar · ◷ Reminders  ─────────────
 # ▭ Keyboard under the input box. Changed the buttons? Bump KB_VERSION by 1:
 # every user gets the new keyboard the first time they tap any button / send anything.
-KB_VERSION = 4
+KB_VERSION = 6
 
 KB_LABELS = {
     'fa': {'admin': "✱ پنل ادمین", 'menu': "▥ اخبار اقتصادی", 'cal': "▦ تقویم", 'rem': "◷ یادآورها"},
     'en': {'admin': "✱ Admin Panel", 'menu': "▥ Economic News", 'cal': "▦ Calendar", 'rem': "◷ Reminders"},
 }
+for _lang, _tr in locales.TEXT.items():
+    KB_LABELS[_lang] = {'admin': "✱ " + _tr["admin"], 'menu': "▥ " + _tr["news"],
+                        'cal': "▦ " + _tr["calendar"], 'rem': "◷ " + _tr["reminders"]}
 MENU_BUTTON = "⌂ Main Menu"          # old labels, still on some users' keyboards: keep working
 KB_ACTIONS = {MENU_BUTTON: 'menu', "⌂ منو": 'menu', "⌂ Menu": 'menu'}
 for _lbls in KB_LABELS.values():
@@ -478,6 +524,12 @@ for _old, _act in (("\U0001F4CA اخبار اقتصادی", 'menu'), ("\U0001F4C
                    ("\u23F0 یادآورها", 'rem'), ("\u23F0 Reminders", 'rem'),
                    ("\U0001F6E0 پنل ادمین", 'admin'), ("\U0001F6E0 Admin Panel", 'admin')):
     KB_ACTIONS[_old] = _act
+
+# modern look: coloured emoji on the three main buttons (the older ▥ ▦ ◷ labels stay mapped above)
+for _lbls in KB_LABELS.values():
+    for _act, _pre in (('menu', "📰 "), ('cal', "📅 "), ('rem', "⏰ "), ('admin', "🛠 ")):
+        _lbls[_act] = _pre + _lbls[_act].split(" ", 1)[1]
+        KB_ACTIONS[_lbls[_act]] = _act
 
 def menu_kb(language: str = 'en', cid: int | None = None) -> ReplyKeyboardMarkup:
     """Keyboard under the input box. It rides along on messages that have no inline buttons.
@@ -496,7 +548,7 @@ MENU_KB = menu_kb('en')   # old name
 def _kb_stamp(language: str, cid: int | None = None) -> int:
     """users.menu_kb stores which keyboard the user has: version * 10 + language (1 = fa, 2 = en),
     + 1000 for the admin keyboard. A version bump, a language switch or becoming admin all trigger a refresh."""
-    return KB_VERSION * 10 + (1 if language == 'fa' else 2) + (1000 if cid is not None and is_admin(cid) else 0)
+    return KB_VERSION * 10 + (LANGS.index(language) + 1 if language in LANGS else 2) + (1000 if cid is not None and is_admin(cid) else 0)
 
 def _menu_kb_sent(cid: int, language: str | None = None) -> bool:
     """True if this user already has the current keyboard."""
@@ -522,6 +574,9 @@ KB_UPDATED = {
     'en': "✓ The bot has been updated.",
 }
 
+for _lang in locales.NEW:
+    KB_UPDATED[_lang] = i18n.t(_lang, KB_UPDATED['en'])
+
 def kb_updated_text(language: str, cid: int) -> str:
     return KB_UPDATED.get(language, KB_UPDATED['en'])
 
@@ -542,7 +597,7 @@ async def keyboard_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                        parse_mode=ParseMode.HTML)
         _mark_menu_kb(chat.id, language)
     except Forbidden:
-        _mark_menu_kb(chat.id, language)
+        pass   # blocked the bot: nothing to refresh
     except Exception as e:
         logger.warning(f"Keyboard refresh for {chat.id} failed: {e}")
 
@@ -572,12 +627,16 @@ def last_news_menu(cid: int) -> int | None:
         row = conn.execute("SELECT news_menu_message_id FROM users WHERE chat_id = ?", (cid,)).fetchone()
     return row[0] if row else None
 
-async def show_main_menu_in_place(message, context, cid: int, language: str):
+async def show_main_menu_in_place(message, context, cid: int, language: str, text: str | None = None, kb=None):
     """/start and the ▥ button always put a FRESH menu at the bottom of the chat.
     (Old behaviour edited the previous menu message in place: when its text was identical Telegram
     answered "message is not modified" and the user saw nothing, or the edit happened far up the chat.)"""
-    text, kb = main_menu_text(language, cid), main_menu_keyboard(language, cid)
+    text = text or main_menu_text(language, cid)
+    kb = kb or main_menu_keyboard(language, cid)
     old_id = last_news_menu(cid)
+    # The menu goes out WITH its inline buttons in the same send (the old "send with the bottom keyboard, then edit
+    # the buttons in" trick could leave the message without buttons). The bottom keyboard is installed by
+    # keyboard_refresh (it runs after every handler) when the user does not have the current one yet.
     sent = await message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     remember_news_menu(cid, sent.message_id)
     if old_id and old_id != sent.message_id:
@@ -592,6 +651,14 @@ def main_menu_text(language: str, cid: int, back: bool = False) -> str:
     on, time_ = get_brief(cid)
     currencies = html.escape(" · ".join(get_user_currencies(cid)), quote=False)
     clock, zone_line = tz.clock_note(language, cid), tz.status_label(language, cid)
+    if language in locales.NEW:
+        tr = locales.TEXT[language]
+        status = (f"{tr['daily']}, {html.escape(time_, quote=False)} ({clock})" if on
+                  else tr["before"] if get_pre_news(cid) else tr["off"])
+        return (f"▥ <b>{tr['news']}</b>\n{tr['intro']}\n"
+                f"<blockquote>⇄ {tr['currencies']}: {currencies}\n"
+                f"◉ {tr['auto_send']}: {status}\n🌍 {tr['zone']}: {html.escape(zone_line)}</blockquote>"
+                + blurbs.about(language, "news"))
     if language == "fa":
         status = (f"روزانه، ساعت {html.escape(time_, quote=False)} ({clock})" if on
                   else "۳۰ دقیقه قبل از هر خبر" if get_pre_news(cid) else "خاموش")
@@ -599,21 +666,22 @@ def main_menu_text(language: str, cid: int, back: bool = False) -> str:
                 "برای دیدن خبرها یکی از دکمه‌های پایین رو بزن.\n"
                 f"<blockquote>⇄ ارزهای تو: {currencies}\n"
                 f"◉ ارسال خودکار: {status}\n"
-                f"🌍 منطقه زمانی: {zone_line}</blockquote>")
+                f"🌍 منطقه زمانی: {zone_line}</blockquote>"
+                + blurbs.about(language, "news"))
     status = (f"once a day, {html.escape(time_, quote=False)} ({clock})" if on
               else "30 min before each news" if get_pre_news(cid) else "Off")
     return ("▥ <b>Economic News</b>\n"
             "Tap a button below to see the news.\n"
             f"<blockquote>⇄ Your currencies: {currencies}\n"
             f"◉ Auto-send: {status}\n"
-            f"🌍 Time zone: {zone_line}</blockquote>")
+            f"🌍 Time zone: {zone_line}</blockquote>"
+            + blurbs.about(language, "news"))
 
 def main_menu_keyboard(language: str = 'en', cid: int | None = None,
                        selected: str | None = None) -> InlineKeyboardMarkup:
     t = UI[language]
     on, time_ = get_brief(cid) if cid is not None else (False, DEFAULT_BRIEF_TIME)
     before = get_pre_news(cid) if cid is not None else False
-    other_label, other_cb = t['other_lang']
     def period_label(key: str) -> str:
         return f"{t[key]} •" if selected == key else t[key]
     return InlineKeyboardMarkup([
@@ -625,17 +693,14 @@ def main_menu_keyboard(language: str = 'en', cid: int | None = None,
         [InlineKeyboardButton(period_label('week'), callback_data="week")],
         [
             InlineKeyboardButton(t['brief_btn_on'].format(time=time_) if on
-                                 else (("◴ ارسال: ۳۰ دقیقه قبل از خبر" if language == "fa" else "◴ Auto-send: 30 min before")
+                                 else (("◴ ارسال: ۳۰ دقیقه قبل از خبر" if language == "fa" else i18n.t(language, "◴ Auto-send: 30 min before"))
                                        if before else t['brief_btn_off']),
                                  callback_data="brief"),
             InlineKeyboardButton(t['currencies'], callback_data="choose_currencies"),
         ],
-        [
-            InlineKeyboardButton(t['channel'], callback_data="my_channel"),
-            InlineKeyboardButton(other_label, callback_data=other_cb),   # one tap language switch
-        ],
+        [InlineKeyboardButton(t['channel'], callback_data="my_channel")],
         [InlineKeyboardButton("🌍 " + (tz.status_label(language, cid) if cid is not None
-                                       else ("منطقه زمانی" if language == "fa" else "Time zone")),
+                                       else ("منطقه زمانی" if language == "fa" else i18n.t(language, "Time zone"))),
                               callback_data="tzs")],      # language + time zone settings
     ])
 
@@ -678,28 +743,30 @@ def brief_panel(language: str, cid: int, notice: str = "") -> tuple[str, InlineK
     before = get_pre_news(cid)
     if daily:
         now = (f"● <b>روشنه:</b> هر روز کاری ساعت <b>{time_}</b> ({clock})" if fa
-               else f"● <b>On:</b> every weekday at <b>{time_}</b> ({clock})")
+               else i18n.t(language, "● <b>On:</b> every weekday at <b>{time}</b> ({clock})").format(time=time_, clock=clock))
     elif before:
-        now = "● <b>روشنه:</b> ۳۰ دقیقه قبل از انتشار هر خبر" if fa else "● <b>On:</b> 30 minutes before each news"
+        now = "● <b>روشنه:</b> ۳۰ دقیقه قبل از انتشار هر خبر" if fa else i18n.t(language, "● <b>On:</b> 30 minutes before each news")
     else:
-        now = "○ <b>خاموشه</b> (ساعتی تنظیم نشده)" if fa else "○ <b>Off</b> (no time set)"
+        now = "○ <b>خاموشه</b> (ساعتی تنظیم نشده)" if fa else i18n.t(language, "○ <b>Off</b> (no time set)")
     if fa:
         how = ("▭ <b>ساعت رو تایپ کن</b> و بفرست (" + clock + ")\nمثلاً <code>7:23</code> یا <code>17:00</code>\n\n"
                "یا دکمه‌ی ◴ پایین رو بزن تا ۳۰ دقیقه قبل از هر خبر برات بیاد.\n"
                "<i>فقط یکی از این دو فعاله.</i>")
     else:
-        how = ("▭ <b>Type the time</b> and send it (" + clock + ")\nExample: <code>7:23</code> or <code>17:00</code>\n\n"
-               "or tap ◴ below to get each news 30 minutes before it is released.\n"
-               "<i>Only one of the two can be on.</i>")
-    head = ["▤ <b>ارسال خودکار خبرها</b>" if fa else "▤ <b>Automatic news</b>", ""]
+        how = i18n.t(language, "▭ <b>Type the time</b> and send it ({clock})\nExample: <code>7:23</code> or <code>17:00</code>\n\n"
+                     "or tap ◴ below to get each news 30 minutes before it is released.\n"
+                     "<i>Only one of the two can be on.</i>").format(clock=clock)
+    head = ["▤ <b>ارسال خودکار خبرها</b>" if fa else i18n.t(language, "▤ <b>Automatic news</b>"), ""]
     text = "\n".join(([notice, ""] if notice else []) + head + [now, "", how])
-    state = ("روشن ✓" if before else "خاموش") if fa else ("On ✓" if before else "Off")
-    rows = [[InlineKeyboardButton((f"◴ ۳۰ دقیقه قبل از هر خبر · {state}" if fa else f"◴ 30 min before each news · {state}"),
+    state = (("روشن ✓" if before else "خاموش") if fa
+             else i18n.t(language, "On ✓") if before else i18n.t(language, "Off"))
+    rows = [[InlineKeyboardButton((f"◴ ۳۰ دقیقه قبل از هر خبر · {state}" if fa
+                                   else i18n.t(language, "◴ 30 min before each news · {state}").format(state=state)),
                                   callback_data="brief_mode_before")]]
     if daily:
-        rows.append([InlineKeyboardButton("◌ خاموش کردن ساعت" if fa else "◌ Turn off the time", callback_data="brief_off_all")])
+        rows.append([InlineKeyboardButton("◌ خاموش کردن ساعت" if fa else i18n.t(language, "◌ Turn off the time"), callback_data="brief_off_all")])
     rows.append([InlineKeyboardButton("🌍 " + tz.status_label(language, cid), callback_data="tzs")])
-    rows.append([InlineKeyboardButton("✕ انصراف" if fa else "✕ Cancel", callback_data="main_menu")])
+    rows.append([InlineKeyboardButton("✕ انصراف" if fa else i18n.t(language, "✕ Cancel"), callback_data="main_menu")])
     return text, InlineKeyboardMarkup(rows)
 
 def brief_time_picker(language: str, cid: int) -> tuple[str, InlineKeyboardMarkup]:
@@ -707,7 +774,7 @@ def brief_time_picker(language: str, cid: int) -> tuple[str, InlineKeyboardMarku
     on, time_ = get_brief(cid)
     rows = [[InlineKeyboardButton(f"✓ {q}" if on and q == time_ else q, callback_data=f"brief_set_{q}")
              for q in QUICK_TIMES[i:i + 3]] for i in (0, 3)]
-    rows.append([InlineKeyboardButton(("✓ " if not on else "") + ("خاموش کردن ارسال خودکار" if language == "fa" else "Turn off auto-send"),
+    rows.append([InlineKeyboardButton(("✓ " if not on else "") + ("خاموش کردن ارسال خودکار" if language == "fa" else i18n.t(language, "Turn off auto-send")),
                                       callback_data="brief_none")])
     rows.append([InlineKeyboardButton(t['back'], callback_data="brief")])
     clock = tz.clock_note(language, cid)
@@ -715,7 +782,8 @@ def brief_time_picker(language: str, cid: int) -> tuple[str, InlineKeyboardMarku
         now = (f"الان: <b>{time_}</b> ({clock})" if on
                else "الان: <b>خاموش</b> (خبری خودکار نمیاد)")
     else:
-        now = f"Now: <b>{time_}</b> ({clock})" if on else "Now: <b>Off</b> (no automatic news)"
+        now = (i18n.t(language, "Now: <b>{time}</b> ({clock})").format(time=time_, clock=clock) if on
+               else i18n.t(language, "Now: <b>Off</b> (no automatic news)"))
     return t['t_title'].format(now=now, zone=clock), InlineKeyboardMarkup(rows)
 
 
@@ -741,6 +809,15 @@ WEEKDAYS = {   # Python weekday(): Monday = 0
     'fa': ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه", "شنبه", "یک‌شنبه"],
     'en': ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
 }
+# Persian months written in each language (the Persian calendar has no native name there, so they are transliterated)
+JALALI_MONTHS.update({
+    'hi': ["फ़रवरदीन", "उर्दीबेहेश्त", "ख़ोरदाद", "तीर", "मोरदाद", "शहरीवर", "महर", "आबान", "आज़र", "दे", "बहमन", "एस्फ़ंद"],
+    'ru': ["Фарвардин", "Ордибехешт", "Хордад", "Тир", "Мордад", "Шахривар", "Мехр", "Абан", "Азар", "Дей", "Бахман", "Эсфанд"],
+    'id': JALALI_MONTHS['en'], 'pt-BR': JALALI_MONTHS['en'], 'vi': JALALI_MONTHS['en'],
+})
+for _lang in locales.NEW:
+    WEEKDAYS[_lang] = image_locale.DAYS[_lang]
+    GREGORIAN_MONTHS[_lang] = image_locale.MONTHS[_lang]
 _FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def fa_num(x) -> str:
@@ -768,12 +845,15 @@ def jalali_str(d: dt.date, language: str) -> str:
     wd = WEEKDAYS[language][d.weekday()]
     if language == 'fa':
         return f"{wd} {fa_num(jd)} {JALALI_MONTHS['fa'][jm - 1]} {fa_num(jy)}"
-    return f"{wd}, {jd} {JALALI_MONTHS['en'][jm - 1]} {jy}"
+    return f"{wd}, {jd} {JALALI_MONTHS.get(language, JALALI_MONTHS['en'])[jm - 1]} {jy}"
 
 def gregorian_str(d: dt.date, language: str) -> str:
     wd = WEEKDAYS[language][d.weekday()]
     if language == 'fa':
         return f"{wd} {fa_num(d.day)} {GREGORIAN_MONTHS['fa'][d.month - 1]} {fa_num(d.year)}"
+    if language in locales.NEW:
+        return image_locale.date(language, image_locale.DAY_KEYS[d.weekday()],
+                                 image_locale.MON_KEYS[d.month - 1], str(d.day)) + f" {d.year}"
     return f"{wd}, {d.day} {GREGORIAN_MONTHS['en'][d.month - 1]} {d.year}"
 
 def ny_today() -> dt.date:
@@ -797,7 +877,9 @@ CAL_UI = {
         'keep_one': "حداقل یک مقصد باید انتخاب باشه",
         'toast_dest_on': "✓ {name} اضافه شد", 'toast_dest_off': "{name} برداشته شد",
         'added': "✓ کانال {ch} وصل شد و به مقصدهای تقویم اضافه شد.\n\n",
-        't_title': "◷ <b>ساعت ارسال تاریخ</b>\n\nالان روی <b>{time}</b> ({zone}) تنظیمه.\nاول ساعت رو بزن، بعد دقیقه.",
+        't_title': "◷ <b>ساعت ارسال تاریخ</b>\n\nالان: <b>{time}</b> ({zone})\n\n▾ ساعت دلخواهت رو بنویس و بفرست، مثلاً <code>7:23</code> یا <code>17:00</code>\nیا یکی از دکمه‌های پایین رو بزن.\n\n△ ساعت <b>{zone}</b> حساب می‌شه.",
+        'off_btn': "خاموش کردن ارسال تاریخ",
+        'saved': "✓ <b>ذخیره شد.</b> از الان هر روز ساعت <b>{time}</b> ({zone}) تاریخ برات میاد.",
         'daily_msg': "▦ <b>تاریخ امروز</b>",
         'back': "‹ بازگشت", 'done': "✓ تأیید",
     },
@@ -818,11 +900,15 @@ CAL_UI = {
         'keep_one': "Keep at least one destination",
         'toast_dest_on': "✓ {name} added", 'toast_dest_off': "{name} removed",
         'added': "✓ Channel {ch} connected and added to the calendar destinations.\n\n",
-        't_title': "◷ <b>Date delivery time</b> ({zone})\n\nCurrently <b>{time}</b>.\nTap an hour, then the minutes.",
+        't_title': "◷ <b>When should I send the date?</b>\n\nNow: <b>{time}</b> ({zone})\n\n▾ Type a time and send it, e.g. <code>7:23</code> or <code>17:00</code>\nor tap one of the buttons below.\n\n△ The time must be <b>{zone}</b>.",
+        'off_btn': "Turn off the daily date",
+        'saved': "✓ <b>Saved.</b> From now on you get the date every day at <b>{time}</b> ({zone}).",
         'daily_msg': "▦ <b>Today's date</b>",
         'back': "‹ Back", 'done': "✓ Done",
     },
 }
+for _lang in locales.NEW:
+    CAL_UI[_lang] = i18n.table(_lang, CAL_UI['en'])
 
 def ensure_calendar_table():
     database.initialize()
@@ -899,12 +985,17 @@ def _jalali_month_info(d: dt.date) -> tuple[int, int, int, int, int]:
         n += 1
     return jy, jm, jd, (first.weekday() + 2) % 7, n          # Python Mon=0 -> Saturday=0
 
+def _week_heads(lang: str, order: list[int]) -> list[str]:
+    """One-letter column heads for the calendar grid, in the language of the user."""
+    days = WEEKDAYS.get(lang) or WEEKDAYS['en']
+    return [days[i][:1].upper() for i in order]
+
 def build_date_model(language: str, kinds: list[str], d: dt.date | None = None, cid: int | None = None) -> dict:
     """Everything calendar_image.render_date_card needs. Persian text only if the server can draw it."""
     import calendar as _cal
     d = d or tz.today_for(language, cid)
     fa = language == "fa" and calendar_image.RTL_OK
-    lang = "fa" if fa else "en"
+    lang = "fa" if fa else (language if language in locales.NEW else "en")   # month / weekday names
     use_j = language == "fa" and "jalali" in kinds
     use_g = language != "fa" or "gregorian" in kinds
     jy, jm, jd, j_start, j_days = _jalali_month_info(d)
@@ -916,34 +1007,44 @@ def build_date_model(language: str, kinds: list[str], d: dt.date | None = None, 
 
     g_parts = dict(wd=WEEKDAYS[lang][d.weekday()], day=num(d.day), month=GREGORIAN_MONTHS[lang][d.month - 1], year=num(d.year))
     j_parts = dict(wd=WEEKDAYS[lang][d.weekday()], day=num(jd), month=JALALI_MONTHS[lang][jm - 1], year=num(jy))
-    season = (["بهار", "تابستان", "پاییز", "زمستان"] if fa else ["Spring", "Summer", "Autumn", "Winter"])[(jm - 1) // 3]
+    season = (["بهار", "تابستان", "پاییز", "زمستان"] if fa
+              else [i18n.t(language, s) for s in ("Spring", "Summer", "Autumn", "Winter")])[(jm - 1) // 3]
     j_doy = (jm - 1) * 31 + jd if jm <= 6 else 186 + (jm - 7) * 30 + jd
     j_ydays = 366 if (jy % 33) in (1, 5, 9, 13, 17, 22, 26, 30) else 365
     if jal_hero:
-        hero, kind = j_parts, ("" if fa else "Persian")
+        hero, kind = j_parts, ("" if fa else i18n.t(language, "Persian"))
         month_len_left = j_days - jd
         grid = dict(title=f"{j_parts['month']} {j_parts['year']}", start=j_start, days=j_days, today=jd,
-                    heads=(["ش", "ی", "د", "س", "چ", "پ", "ج"] if fa else ["S", "S", "M", "T", "W", "T", "F"]),
+                    heads=(["ش", "ی", "د", "س", "چ", "پ", "ج"] if fa else _week_heads(lang, [5, 6, 0, 1, 2, 3, 4])),
                     weekend=[6])
         nums = [num(i) for i in range(1, j_days + 1)]
-        second = (dict(label=("میلادی" if fa else "Gregorian"),
+        second = (dict(label=("میلادی" if fa else i18n.t(language, "Gregorian")),
                        big=f"{g_parts['day']} {g_parts['month']} {g_parts['year']}", sub=g_parts["wd"]) if use_g else None)
-        stats = ([("روز سال", f"{num(j_doy)}/{num(j_ydays)}"), ("فصل", season), ("تا پایان ماه", f"{num(month_len_left)} " + ("روز" if fa else "d"))]
-                 if fa else [("Day of year", f"{j_doy}/{j_ydays}"), ("Season", season), ("Month ends in", f"{month_len_left} d")])
+        stats = ([("روز سال", f"{num(j_doy)}/{num(j_ydays)}"), ("فصل", season), ("تا پایان ماه", f"{num(month_len_left)} " + ("روز" if fa else i18n.t(language, "d")))]
+                 if fa else [(i18n.t(language, "Day of year"), f"{j_doy}/{j_ydays}"), (i18n.t(language, "Season"), season),
+                    (i18n.t(language, "Month ends in"), f"{month_len_left} {i18n.t(language, 'd')}")])
     else:
-        hero, kind = g_parts, ("میلادی" if fa else "Gregorian")
+        hero, kind = g_parts, ("میلادی" if fa else i18n.t(language, "Gregorian"))
         grid = dict(title=f"{g_parts['month']} {g_parts['year']}", start=g_start, days=g_days, today=d.day,
-                    heads=(["د", "س", "چ", "پ", "ج", "ش", "ی"] if fa else ["M", "T", "W", "T", "F", "S", "S"]),
+                    heads=(["د", "س", "چ", "پ", "ج", "ش", "ی"] if fa else _week_heads(lang, [0, 1, 2, 3, 4, 5, 6])),
                     weekend=[5, 6] if not fa else [4])
         nums = [num(i) for i in range(1, g_days + 1)]
-        second = (dict(label=("شمسی" if fa else "Persian"),
+        second = (dict(label=("شمسی" if fa else i18n.t(language, "Persian")),
                        big=f"{j_parts['day']} {j_parts['month']} {j_parts['year']}", sub=j_parts["wd"]) if use_j else None)
         week = d.isocalendar()[1]
         stats = ([("روز سال", f"{num(doy)}/{num(ydays)}"), ("هفته", num(week)), ("فصل سال", "Q" + num((d.month - 1) // 3 + 1))]
-                 if fa else [("Day of year", f"{doy}/{ydays}"), ("Week", str(week)), ("Quarter", f"Q{(d.month - 1) // 3 + 1}")])
-    return dict(rtl=fa, title=("تقویم امروز" if fa else "Today's calendar"),
-                sub=tz.zone_text(tz.zone_name(language, cid), lang)["sub"], kind=kind, hero=hero, grid=grid,
-                nums=nums, second=second, stats=stats)
+                 if fa else [(i18n.t(language, "Day of year"), f"{doy}/{ydays}"), (i18n.t(language, "Week"), str(week)),
+                    (i18n.t(language, "Quarter"), f"Q{(d.month - 1) // 3 + 1}")])
+    season_key = None
+    if cid is None or channel_style.season_on(cid):         # ❀ seasons: Persian users follow the Persian seasons
+        if language == "fa":
+            season_key = calendar_image.SEASON_KEYS[(jm - 1) // 3]
+        else:
+            season_key = ("winter", "winter", "spring", "spring", "spring", "summer", "summer", "summer",
+                          "autumn", "autumn", "autumn", "winter")[d.month - 1]
+    return dict(lang=language, rtl=fa, title=("تقویم امروز" if fa else i18n.t(language, "Today's calendar")),
+                sub="", kind=kind, hero=hero, grid=grid,
+                nums=nums, second=second, stats=stats, season=season_key)
 
 channel_style.date_model_provider = lambda language, cid=None: build_date_model(language, list(CAL_KINDS), None, cid)
 
@@ -965,22 +1066,25 @@ def calendar_panel(language: str, cid: int) -> tuple[str, InlineKeyboardMarkup]:
     dests = get_date_dests(cid)
     names = ([c['dest_chat']] if cid in dests else []) + \
             [html.escape(channels.label(ch), quote=False) for ch in connected if ch["id"] in dests]
-    status = ("● روشن" if cal['on'] else "○ خاموش") if fa else ("● On" if cal['on'] else "○ Off")
-    head = "▦ <b>تقویم امروز</b>" if fa else "▦ <b>Today's calendar</b>"
-    labels = ("ارسال روزانه", f"ساعت ({tz.clock_note(language, cid)})", "مقصد") if fa else ("Daily delivery", tz.clock_note(language, cid), "Send to")
+    status = (("● روشن" if cal['on'] else "○ خاموش") if fa
+              else i18n.t(language, "● On") if cal['on'] else i18n.t(language, "○ Off"))
+    head = "▦ <b>تقویم امروز</b>" if fa else i18n.t(language, "▦ <b>Today's calendar</b>")
+    labels = ("ارسال روزانه", f"ساعت ({tz.clock_note(language, cid)})", "مقصد") if fa else (i18n.t(language, "Daily delivery"), tz.clock_note(language, cid), i18n.t(language, "Send to"))
+    time_line = f"◷ <b>{labels[1]}:</b> {html.escape(cal['time'])}\n" if cal['on'] else ""   # no time while delivery is off
     text = ("\n".join([head, *date_lines(language, list(CAL_KINDS), cid=cid)])
             + f"\n\n<blockquote>◫ <b>{labels[0]}:</b> {status}\n"
-            + f"◷ <b>{labels[1]}:</b> {html.escape(cal['time'])}\n"
-            + f"⌖ <b>{labels[2]}:</b> {', '.join(names)}</blockquote>")
+            + time_line
+            + f"⌖ <b>{labels[2]}:</b> {', '.join(names)}</blockquote>"
+            + blurbs.about(language, "calendar"))
     toggle = (("ارسال روزانه · روشن" if cal['on'] else "ارسال روزانه · خاموش") if fa else
-              ("Daily delivery · On" if cal['on'] else "Daily delivery · Off"))
+              (i18n.t(language, "Daily delivery · On") if cal['on'] else i18n.t(language, "Daily delivery · Off")))
     def dest_button(dest_id: int, name: str):
         return InlineKeyboardButton(f"{'●' if dest_id in dests else '○'} {name[:24]}", callback_data=f"cal_d_{dest_id}")
     dest_buttons = [dest_button(cid, c['dest_chat'])] + [
         dest_button(ch["id"], (ch.get("title") or channels.label(ch)).strip()) for ch in connected]
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton(toggle, callback_data="cal_toggle"),
-         InlineKeyboardButton(f"◷ {cal['time']}", callback_data="cal_time")],
+         *([InlineKeyboardButton(f"◷ {cal['time']}", callback_data="cal_time")] if cal['on'] else [])],
         *[dest_buttons[i:i + 2] for i in range(0, len(dest_buttons), 2)],
         [InlineKeyboardButton(c['add_channel'], callback_data="chan_add_cal"),
          InlineKeyboardButton(c['style'], callback_data=f"chs:c:{channel_style.CAL_ID}")],
@@ -997,20 +1101,31 @@ def calendar_after_connect(cid: int, channel_id: int, language: str) -> tuple[st
     text, kb = calendar_panel(language, cid)
     return CAL_UI[language]['added'].format(ch=html.escape(channels.label(ch), quote=False)) + text, kb
 
+AWAIT_CAL_TIME = "cal_time"
+
 def calendar_time_picker(language: str, cid: int) -> tuple[str, InlineKeyboardMarkup]:
-    c, time_ = CAL_UI[language], get_cal(cid)['time']
-    cur_h, cur_m = time_.split(":")
-    rows, row = [], []
-    for h in range(24):
-        hh = f"{h:02d}"
-        row.append(InlineKeyboardButton(f"✓{hh}" if hh == cur_h else hh, callback_data=f"cal_h_{hh}"))
-        if len(row) == 6:
-            rows.append(row)
-            row = []
-    rows.append([InlineKeyboardButton(f"✓:{mm}" if mm == cur_m else f":{mm}", callback_data=f"cal_m_{mm}")
-                 for mm in ("00", "15", "30", "45")])
-    rows.append([InlineKeyboardButton(c['done'], callback_data="cal")])
-    return c['t_title'].format(time=time_, zone=tz.clock_note(language, cid)), InlineKeyboardMarkup(rows)
+    """Same as the news time screen: type the time (7:23, 17:00 ...) or tap a quick time."""
+    c, cal = CAL_UI[language], get_cal(cid)
+    rows = [[InlineKeyboardButton(f"✓ {q}" if cal['on'] and q == cal['time'] else q, callback_data=f"cal_set_{q}")
+             for q in QUICK_TIMES[i:i + 3]] for i in (0, 3)]
+    rows.append([InlineKeyboardButton(("✓ " if not cal['on'] else "") + c['off_btn'], callback_data="cal_off")])
+    rows.append([InlineKeyboardButton(c['back'], callback_data="cal")])
+    return c['t_title'].format(time=cal['time'], zone=tz.clock_note(language, cid)), InlineKeyboardMarkup(rows)
+
+async def cal_time_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """The user typed the time the daily date should arrive (7:23, 17:00, 00:15 ...)."""
+    cid = update.effective_chat.id
+    language = get_user_language(cid, getattr(update.effective_user, "language_code", None))
+    new = parse_hhmm(update.message.text)
+    if not new:
+        await update.message.reply_text(UI[language]['t_bad'], parse_mode=ParseMode.HTML)   # still waiting
+        return
+    _set_cal(cid, "send_time", new)
+    _set_cal(cid, "is_on", 1)
+    context.user_data.pop("awaiting", None)
+    text, kb = calendar_panel(language, cid)
+    notice = CAL_UI[language]['saved'].format(time=new, zone=tz.clock_note(language, cid))
+    await update.message.reply_text(notice + "\n\n" + text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 async def calendar_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
@@ -1043,15 +1158,20 @@ async def calendar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = c['dest_chat'] if dest_id == cid else next(
                 channels.label(ch) for ch in channels.get_channels(cid) if ch["id"] == dest_id)
             toast = c['keep_one'] if state is None else (c['toast_dest_on'] if state else c['toast_dest_off']).format(name=name)
-    elif data == "cal_time" or data.startswith(("cal_h_", "cal_m_")):
-        if data != "cal_time":
-            _, part, val = data.split("_")
-            h, m = cal['time'].split(":")
-            new = f"{val}:{m}" if part == "h" else f"{h}:{val}"
+    elif data.startswith("cal_set_"):
+        new = parse_hhmm(data[len("cal_set_"):])
+        if new:
             _set_cal(cid, "send_time", new)
-            await q.answer(c['toast_time'].format(time=new))
-        else:
-            await q.answer()
+            _set_cal(cid, "is_on", 1)
+            context.user_data.pop("awaiting", None)
+            toast = c['toast_time'].format(time=new)
+    elif data == "cal_off":
+        _set_cal(cid, "is_on", 0)
+        context.user_data.pop("awaiting", None)
+        toast = c['toast_off']
+    elif data == "cal_time" or data.startswith(("cal_h_", "cal_m_")):     # (old hour/minute buttons open the new screen)
+        context.user_data["awaiting"] = AWAIT_CAL_TIME                   # waiting for a typed time
+        await q.answer()
         await safe_edit(q.message, *calendar_time_picker(language, cid))
         return
     await q.answer(toast)
@@ -1062,7 +1182,7 @@ async def reminders_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await reminders.cmd(update, context, get_user_language(cid, getattr(update.effective_user, "language_code", None)))
 
 async def reminders_tick(context: ContextTypes.DEFAULT_TYPE):
-    await reminders.tick(context, get_user_language, menu_kb)
+    await reminders.tick(context, get_user_language, menu_kb, skip=BANNED)
 
 async def date_loop(context: ContextTypes.DEFAULT_TYPE):
     """Every 30 s: send today's date to users whose daily date time is now ON THEIR OWN CLOCK (their time zone:
@@ -1070,17 +1190,23 @@ async def date_loop(context: ContextTypes.DEFAULT_TYPE):
     try:
         with closing(_db()) as conn:
             cand = conn.execute("SELECT chat_id, send_time, last_sent FROM date_daily WHERE is_on = 1").fetchall()
+        cand = [r for r in cand if int(r[0]) not in BANNED]
     except Exception as e:
         logger.error(f"date_loop query failed: {e}")
         return
     if not cand:
         return
     langs = _all_languages()
-    clocks = tz.bulk_now({c_: ("fa" if langs.get(c_) == "fa" else "en") for c_, _t, _l in cand})   # each user's own clock
+    clocks = tz.bulk_now({c_: langs.get(c_) or "en" for c_, _t, _l in cand})   # each user's own clock
     rows = []
     for cid_, send_time, last_sent in cand:
         now_ = clocks[cid_]
-        if send_time == now_.strftime("%H:%M") and last_sent != now_.date().isoformat():
+        try:
+            h_, m_ = map(int, (send_time or DEFAULT_CAL_TIME).split(":"))
+        except ValueError:
+            continue
+        late_ = (now_ - now_.replace(hour=h_, minute=m_, second=0, microsecond=0)).total_seconds()
+        if 0 <= late_ < DIGEST_GRACE_MIN * 60 and last_sent != now_.date().isoformat():    # from the set time, never before
             rows.append((cid_,))
     for (cid,) in rows:
         try:
@@ -1178,7 +1304,7 @@ def group_by_currency(events: list[dict]) -> dict[str, list[dict]]:
 
 def format_message_clean(title: str, events: list[dict], language: str = 'en') -> str:
     if not events:
-        return "☾ No hot news today." if language == 'en' else "☾ هیچ خبر داغی نیست."
+        return "☾ هیچ خبر داغی نیست." if language == 'fa' else i18n.t(language, "☾ No hot news today.")
 
     messages = {
         'fa': {
@@ -1212,7 +1338,7 @@ def format_message_clean(title: str, events: list[dict], language: str = 'en') -
             date_obj = datetime.strptime(date_str + f" {datetime.now().year}", "%a, %b %d %Y")
             date_obj = ny_tz.localize(date_obj)
             date_str = date_obj.strftime("%b %d")
-            farsi_day = messages[language]['day_map'].get(date_obj.strftime("%A"), date_obj.strftime("%A"))
+            farsi_day = messages.get(language, messages['en'])['day_map'].get(date_obj.strftime("%A"), date_obj.strftime("%A"))
             date_display = farsi_day
             date_line = f"➤ {farsi_day}"
         except:
@@ -1273,12 +1399,15 @@ def news_header(endpoint: str, language: str, kinds: list[str], day: dt.date,
         "en": {"yesterday": f"Yesterday's Economic News, {c} Time", "today": f"Today's Economic News, {c} Time",
                "tomorrow": f"Tomorrow's Economic News, {c} Time", "weekly": f"This Week's Economic News, {c} Time"},
     }
+    for lang, tr in locales.TEXT.items():
+        titles[lang] = {key: f"{tr['news']} · {tr[period]} · {c}" for key, period in
+                        (("yesterday", "yesterday"), ("today", "today"), ("tomorrow", "tomorrow"), ("weekly", "week"))}
     selected_day = day + dt.timedelta(days={"yesterday": -1, "tomorrow": 1}.get(endpoint, 0))
     lines = [f"<b>▤ {titles[language][endpoint]}</b>", ""]
     if endpoint == "weekly":
         start = day - dt.timedelta(days=day.weekday())
         end = start + dt.timedelta(days=6)
-        label = "بازه هفته" if language == "fa" else "Week"
+        label = "بازه هفته" if language == "fa" else i18n.t(language, "Week")
         lines.append(f"▦ <b>{label}:</b> {start.isoformat()}  →  {end.isoformat()}")
         if include_calendar:
             lines.extend(date_lines(language, kinds, day))
@@ -1331,7 +1460,7 @@ def news_pages(endpoint: str, events: list[dict] | None, currencies: list[str],
     if events is None:
         blocks.append("<blockquote>△ دریافت خبرها ممکن نشد. لطفاً بعداً دوباره امتحان کن.</blockquote>"
                       if language == "fa" else
-                      "<blockquote>△ News is unavailable. Please try again later.</blockquote>")
+                      i18n.t(language, "<blockquote>△ News is unavailable. Please try again later.</blockquote>"))
     else:
         grouped = group_by_currency(events)
         period_fa = {"yesterday": "دیروز", "today": "امروز", "tomorrow": "فردا", "weekly": "این هفته"}
@@ -1344,7 +1473,8 @@ def news_pages(endpoint: str, events: list[dict] | None, currencies: list[str],
                 return ""
             return html.escape(text[:40], quote=False)
         if not any(grouped.get(currency) for currency in currencies):
-            no_news = (f"برای ارزهای انتخابی {period_fa[endpoint]} خبری با اهمیت انتخاب‌شده نیست."
+            no_news = (locales.NEWS[language]["no_news"] if language in locales.NEW else
+                       f"برای ارزهای انتخابی {period_fa[endpoint]} خبری با اهمیت انتخاب‌شده نیست."
                        if language == "fa" else
                        f"No news for the selected currencies {period_en[endpoint]} at the selected impact levels.")
             blocks.append(f"<blockquote>{no_news}</blockquote>")
@@ -1367,7 +1497,9 @@ def news_pages(endpoint: str, events: list[dict] | None, currencies: list[str],
                 key = (date_raw.casefold(), normalized) if date_raw and normalized else ("unmatched", index)
                 groups.setdefault(key, []).append(ev)
 
-            labels = ("قبلی", "پیش‌بینی", "واقعی") if language == "fa" else ("Prev", "Forecast", "Actual")
+            labels = ((locales.NEWS[language]["previous"], locales.NEWS[language]["forecast"], locales.NEWS[language]["actual"])
+                      if language in locales.NEW else
+                      ("قبلی", "پیش‌بینی", "واقعی") if language == "fa" else ("Prev", "Forecast", "Actual"))
             for batch in groups.values():
                 first = batch[0]
                 shown_first = tz.localize_event(first, language, cid)      # date + time in the user's zone
@@ -1432,7 +1564,7 @@ async def fetch_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE, end
     revisions = context.chat_data.setdefault("news_revisions", {})
     revision = revisions.get(message_id, 0)
     language = get_user_language(cid, getattr(q.from_user, "language_code", None))
-    loading = "◴ در حال دریافت خبرها..." if language == "fa" else "◴ Fetching news..."
+    loading = "◴ در حال دریافت خبرها..." if language == "fa" else i18n.t(language, "◴ Fetching news...")
     dashboard = main_menu_text(language, cid)
     await safe_edit(q.message, dashboard + "\n\n" + loading, main_menu_keyboard(language, cid, selected))
     allowed, impacts = get_user_currencies(cid), get_user_impacts(cid)
@@ -1473,16 +1605,6 @@ ADMIN_AWAIT_ADD_SERVER = "add_server"
 ADMIN_AWAIT_RESTORE_FILE = "restore_file"
 
 ADMIN_RULE = "──────────────"
-_BK_NAME = re.compile(r"^backup-(\d{8})-(\d{6})-([a-z\-]+?)-*\.zip$")
-
-def _backup_label(p: pathlib.Path) -> str:
-    """backup-20261009-073550-manual.zip → Oct 09, 07:35 · manual"""
-    m = _BK_NAME.match(p.name)
-    if not m:
-        return p.name
-    when = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
-    return f"{when:%b %d, %H:%M} · {m.group(3)}"
-
 def _active_server_name() -> str:
     for name, url in list_api_servers().items():
         if url == API_BASE:
@@ -1499,33 +1621,32 @@ def _user_stats() -> tuple[int, int]:
         return 0, 0
 
 def build_admin_menu_text() -> str:
-    backups = bk.list_backups()
     users, daily = _user_stats()
-    last = f"{_backup_label(backups[0])} · {len(backups)} saved" if backups else "none yet"
     lines = [
         "<b>ADMIN PANEL</b>", ADMIN_RULE,
         f"<b>Server</b>     ● {html.escape(_active_server_name())}",
         f"<code>{html.escape(API_BASE)}</code>",
         "",
         f"<b>Users</b>      {users} · {daily} get daily news",
-        f"<b>Backup</b>     {last}",
         f"<b>Restart msg</b>  {'● on' if restart_notice_on() else '○ off'}",
+        f"<b>Log group</b>  {'● on' if get_log_group_id() else '○ off'}",
     ]
     if ea_admin.available():
         lines.append(f"<b>Downloads</b>  {ea_admin.summary()}")
     return "\n".join(lines)
 
 def build_admin_menu_keyboard() -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton("⇄ Servers", callback_data="admin_servers")]]
+    rows = [[InlineKeyboardButton("◆ User Management", callback_data="admin_users")],
+            [InlineKeyboardButton("⇄ Servers", callback_data="admin_servers")]]
     if ea_admin.available():
-        rows[0].append(InlineKeyboardButton("▤ Downloads", callback_data="ea:list"))
+        rows[1].append(InlineKeyboardButton("▤ Downloads", callback_data="ea:list"))
     rows += [
         [
             InlineKeyboardButton("⤓ Backup now", callback_data="admin_backup"),
             InlineKeyboardButton("↺ Restore", callback_data="admin_restore"),
         ],
-        [InlineKeyboardButton("▦ Saved backups", callback_data="admin_backups")],
-        [InlineKeyboardButton("◴ API cache", callback_data="admin_cache")],
+        [InlineKeyboardButton("◴ API cache", callback_data="admin_cache"),
+         InlineKeyboardButton("▤ Log group", callback_data="admin_log")],
         [InlineKeyboardButton("● Restart message · On" if restart_notice_on() else "○ Restart message · Off",
                               callback_data="admin_restartmsg")],
     ]
@@ -1539,8 +1660,95 @@ async def admin_restartmsg_callback(update: Update, context: ContextTypes.DEFAUL
         return
     on = not restart_notice_on()
     set_config("restart_notice", "1" if on else "0")
+    logs.fire(logs.log_admin_action(context.bot, q.from_user.id, "Restart message " + ("enabled" if on else "disabled"),
+                                    username=q.from_user.username, first_name=q.from_user.first_name,
+                                    last_name=q.from_user.last_name))
     await q.answer("● Users get a message after each restart" if on else "○ Restarts are silent now")
     await safe_edit(q.message, build_admin_menu_text(), build_admin_menu_keyboard())
+
+# ───────────────  Admin: ▤ Log group  ─────────────
+ADMIN_AWAIT_LOG_GROUP = "admin_log_group"
+
+def get_log_group_id() -> int:
+    try:
+        return int(get_config("log_group_id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+def _log_state_load() -> dict:
+    return json.loads(get_config("log_topics") or "{}")
+
+def _log_state_save(state: dict) -> None:
+    set_config("log_topics", json.dumps(state))
+
+def build_log_view(notice: str = "") -> tuple[str, InlineKeyboardMarkup]:
+    gid = get_log_group_id()
+    lines = ["<b>LOG GROUP</b>", ADMIN_RULE]
+    if notice:
+        lines += [notice, ""]
+    lines.append(f"<b>Status</b>  ● on · <code>{gid}</code>" if gid else "<b>Status</b>  ○ off")
+    lines += ["",
+              "The bot posts new users, activity, admin actions, bans, backups and errors here, one topic each.",
+              "",
+              "<i>Make a group, turn Topics on, add the bot as admin with “Manage topics”, then send the group ID.</i>"]
+    rows = [[InlineKeyboardButton("✎ Change group ID" if gid else "＋ Set group ID", callback_data="adminlog_set")]]
+    if gid:
+        rows[0].append(InlineKeyboardButton("✕ Turn off", callback_data="adminlog_off"))
+    rows.append([InlineKeyboardButton("← Back", callback_data="admin_menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+async def admin_log_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """admin_log (open) · adminlog_set (ask for the group ID) · adminlog_off"""
+    q = update.callback_query
+    if not is_admin(q.message.chat.id):
+        await q.answer("Admins only.", show_alert=True)
+        return
+    context.user_data.pop("awaiting", None)
+    data = q.data
+    if data == "adminlog_set":
+        context.user_data["awaiting"] = ADMIN_AWAIT_LOG_GROUP
+        await q.answer()
+        await safe_edit(q.message,
+            "<b>LOG GROUP ID</b>\n" + ADMIN_RULE +
+            "\nSend the group ID (a negative number):\n<code>-1001234567890</code>\n\n"
+            "<i>Tip: add @userinfobot or @getidsbot to the group to see its ID, then remove it.</i>",
+            build_back_keyboard("admin_log"))
+        return
+    notice = ""
+    if data == "adminlog_off":
+        logs.deactivate_group(_log_state_load, _log_state_save)
+        set_config("log_group_id", "0")
+        notice = "○ Log group turned off."
+    await q.answer()
+    text, kb = build_log_view(notice)
+    await safe_edit(q.message, text, kb)
+
+async def admin_log_group_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """The admin sent the log group ID: check the group, save it, let the bot create the topics."""
+    raw = (update.message.text or "").strip().translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
+    back = build_back_keyboard("admin_log")
+    if not re.fullmatch(r"-\d{5,}", raw):
+        await update.message.reply_text("✕ Send it like this: <code>-1001234567890</code>",
+                                        reply_markup=back, parse_mode=ParseMode.HTML)
+        return   # still waiting
+    gid = int(raw)
+    context.user_data.pop("awaiting", None)
+    info = await logs.activate_group(context.bot, gid, _log_state_load, _log_state_save)
+    if not info["ok"]:
+        text, kb = build_log_view("✕ <b>Could not reach that group.</b>\nCheck the ID and that the bot is a member.\n"
+                                  f"<code>{html.escape(info['error'][:150])}</code>")
+        await update.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        return
+    set_config("log_group_id", str(gid))
+    notes = [f"✓ <b>Connected:</b> {html.escape(info['title'])}"]
+    if not info["forum"]:
+        notes.append("△ Topics are off in this group: logs will arrive as plain messages. Turn Topics on, then set the ID again.")
+    elif not (info["admin"] and info["manage_topics"]):
+        notes.append("△ The bot needs to be an admin with “Manage topics”, then set the ID again.")
+    else:
+        notes.append("Topics are ready.")
+    text, kb = build_log_view("\n".join(notes))
+    await update.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 # ───────────────  Admin: API cache  ─────────────
 ADMIN_AWAIT_CACHE_TIMES = "admin_cache_times"
@@ -1748,6 +1956,10 @@ async def admin_use_server_callback(update: Update, context: ContextTypes.DEFAUL
     already = servers[name] == API_BASE
     API_BASE = servers[name]
     set_config("api_base_url", API_BASE)
+    if not already:
+        logs.fire(logs.log_admin_action(context.bot, q.from_user.id, "API server switched", f"Active server: {name}",
+                                        username=q.from_user.username, first_name=q.from_user.first_name,
+                                        last_name=q.from_user.last_name))
     await admin_servers_callback(update, context, f"{name} is already active" if already else f"● Switched to {name}")
 
 async def admin_delete_ask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1824,6 +2036,312 @@ async def admin_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✓ Saved {html.escape(name)}\n\n" + text, reply_markup=kb,
                                     parse_mode=ParseMode.HTML)
 
+# ───────────────  Admin: ◆ User Management (find · ban · delete)  ─────────────
+# Bans live in bot_config as "ban:<chat_id>" (so backups carry them); names/usernames seen by the bot as "uinfo:<chat_id>".
+ADMIN_AWAIT_USER_FIND = "au_find"
+USERS_PAGE = 8
+BANNED: set[int] = set()
+_UINFO: dict[int, tuple[str, str]] = {}      # (name, username) already stored: skips needless writes
+
+def load_banned():
+    global BANNED
+    try:
+        with closing(_db()) as conn:
+            rows = conn.execute("SELECT key FROM bot_config WHERE key LIKE ?", ("ban:%",)).fetchall()
+        BANNED = {int(r[0][4:]) for r in rows if r[0][4:].lstrip("-").isdigit()}
+        logger.info(f"Banned users loaded: {len(BANNED)}")
+    except Exception as e:
+        logger.error(f"Error in load_banned: {e}")
+
+def is_banned(chat_id: int) -> bool:
+    return chat_id in BANNED
+
+def set_banned(chat_id: int, on: bool):
+    with closing(_db()) as conn, conn:
+        if on:
+            conn.execute("INSERT INTO bot_config (key, value) VALUES (?, ?) "
+                         "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (f"ban:{chat_id}", "1"))
+        else:
+            conn.execute("DELETE FROM bot_config WHERE key = ?", (f"ban:{chat_id}",))
+    (BANNED.add if on else BANNED.discard)(chat_id)
+
+def _uinfo_get(chat_id: int) -> tuple[str, str]:
+    v = get_config(f"uinfo:{chat_id}")
+    if not v:
+        return "", ""
+    try:
+        d = json.loads(v)
+        return d.get("n", ""), d.get("u", "")
+    except Exception:
+        return "", ""
+
+def _uinfo_save(chat_id: int, name: str, username: str):
+    if _UINFO.get(chat_id) == (name, username):
+        return
+    _UINFO[chat_id] = (name, username)
+    try:
+        set_config(f"uinfo:{chat_id}", json.dumps({"n": name, "u": username}, ensure_ascii=False))
+    except Exception as e:
+        logger.warning(f"uinfo save failed for {chat_id}: {e}")
+
+async def user_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Runs before every handler: banned users are ignored completely; everyone else's name/@username is remembered
+    (that is what the admin's search looks through)."""
+    chat, user = update.effective_chat, update.effective_user
+    if chat is None or user is None or chat.type != "private" or is_admin(chat.id):
+        return
+    if chat.id in BANNED:
+        if update.callback_query:
+            try:
+                await update.callback_query.answer()
+            except Exception:
+                pass
+        raise ApplicationHandlerStop
+    _uinfo_save(chat.id, " ".join(p for p in (user.first_name, user.last_name) if p), user.username or "")
+
+def _user_label(chat_id: int, name: str = "", username: str = "") -> str:
+    base = name or (f"@{username}" if username else "—")
+    return base if len(base) <= 24 else base[:23] + "…"
+
+async def _fill_names(context: ContextTypes.DEFAULT_TYPE, ids: list[int]):
+    """Looks up names Telegram knows for users we have not seen since this feature was added (best effort)."""
+    async def one(cid):
+        if _uinfo_get(cid) != ("", ""):
+            return
+        try:
+            ch = await asyncio.wait_for(context.bot.get_chat(cid), timeout=5)
+            _uinfo_save(cid, " ".join(p for p in (ch.first_name, ch.last_name) if p), ch.username or "")
+        except Exception:
+            pass
+    await asyncio.gather(*(one(c) for c in ids))
+
+def users_panel() -> tuple[str, InlineKeyboardMarkup]:
+    total, daily = _user_stats()
+    text = (f"<b>◆ USER MANAGEMENT</b>\n{ADMIN_RULE}\n"
+            f"<b>Users</b>        {total}\n<b>Banned</b>       {len(BANNED)}\n<b>Daily news</b>  {daily}\n\n"
+            "<i>Find a user by ID, @username or name, or browse the lists.</i>")
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔍 Find user", callback_data="au:find")],
+        [InlineKeyboardButton("▤ All users", callback_data="au:l:0"),
+         InlineKeyboardButton("⛔ Banned", callback_data="au:b:0")],
+        [InlineKeyboardButton("← Back", callback_data="admin_menu")],
+    ])
+    return text, kb
+
+def user_card(chat_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    name, uname = _uinfo_get(chat_id)
+    with closing(_db()) as conn:
+        joined = conn.execute("SELECT joined_at FROM users WHERE chat_id = ?", (chat_id,)).fetchone()
+        sub = conn.execute("SELECT language, digest_on, digest_time, pre_news_on FROM subscribers WHERE chat_id = ?",
+                           (chat_id,)).fetchone()
+        cur = conn.execute("SELECT currencies, impacts FROM user_currencies WHERE chat_id = ?", (chat_id,)).fetchone()
+        n_chan = conn.execute("SELECT COUNT(*) FROM user_channels_multi WHERE chat_id = ?", (chat_id,)).fetchone()[0]
+        n_rem = conn.execute("SELECT COUNT(*) FROM user_reminders WHERE chat_id = ?", (chat_id,)).fetchone()[0]
+    known = bool(joined or sub or cur)
+    status = "⛔ Banned" if chat_id in BANNED else ("● Active" if known else "○ Not in the database")
+    shown = html.escape(name, quote=False) if name else "—"
+    lines = [f"<b>◆ USER</b>\n{ADMIN_RULE}",
+             f"<b>Name</b>      <a href=\"tg://user?id={chat_id}\">{shown}</a>",
+             f"<b>Username</b>  {('@' + html.escape(uname, quote=False)) if uname else '—'}",
+             f"<b>ID</b>          <code>{chat_id}</code>",
+             f"<b>Status</b>     {status}"]
+    if known:
+        if joined and joined[0]:
+            lines.append(f"<b>Joined</b>     {html.escape(str(joined[0]))} UTC")
+        if sub:
+            lang, on, t_, pre = sub
+            auto = (f"daily {html.escape(str(t_ or ''))}" if on else "30 min before each news" if pre else "off")
+            lines.append(f"<b>Language</b>  {html.escape(str(lang or '—'))}")
+            lines.append(f"<b>Auto-send</b>  {auto}")
+        if cur:
+            lines.append(f"<b>Currencies</b>  {html.escape(str(cur[0] or '—'))} · {html.escape(str(cur[1] or '—'))}")
+        lines.append(f"<b>Channels</b>  {n_chan}   <b>Reminders</b>  {n_rem}")
+    rows = []
+    if is_admin(chat_id):
+        lines.append("\n<i>This is the admin account.</i>")
+    else:
+        rows.append([InlineKeyboardButton("✓ Unban" if chat_id in BANNED else "⛔ Ban",
+                                          callback_data=f"au:{'unban' if chat_id in BANNED else 'ban'}:{chat_id}"),
+                     InlineKeyboardButton("🗑 Delete completely", callback_data=f"au:del:{chat_id}")])
+    rows.append([InlineKeyboardButton("← Back", callback_data="admin_users")])
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+def delete_user_completely(chat_id: int) -> int:
+    """Removes the user's rows from every table (settings, channels, reminders, delivery history, saved name).
+    A ban, if there is one, is kept. Returns how many rows were removed."""
+    total = 0
+    with closing(_db()) as conn, conn:
+        for table, col in (("subscribers", "chat_id"), ("user_currencies", "chat_id"), ("users", "chat_id"),
+                           ("user_channels", "chat_id"), ("user_channels_multi", "chat_id"),
+                           ("channel_style", "chat_id"), ("channel_style_multi", "chat_id"),
+                           ("date_daily", "chat_id"), ("date_dest", "chat_id"), ("date_dest", "dest_id"),
+                           ("user_reminders", "chat_id"), ("reminder_tz", "chat_id"),
+                           ("pre_news_sent", "chat_id"), ("pre_news_deliveries", "chat_id"),
+                           ("pre_news_deliveries", "target_id")):
+            total += conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (chat_id,)).rowcount or 0
+        total += conn.execute("DELETE FROM bot_config WHERE key = ?", (f"uinfo:{chat_id}",)).rowcount or 0
+    _UINFO.pop(chat_id, None)
+    return total
+
+async def _users_list(context: ContextTypes.DEFAULT_TYPE, kind: str, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    if kind == "b":
+        everyone = sorted(BANNED)
+        title = "⛔ BANNED USERS"
+    else:
+        with closing(_db()) as conn:
+            everyone = [int(r[0]) for r in conn.execute("SELECT chat_id FROM users ORDER BY joined_at DESC, chat_id").fetchall()]
+        title = "▤ ALL USERS"
+    pages = max(1, -(-len(everyone) // USERS_PAGE))
+    page = min(max(page, 0), pages - 1)
+    chunk = everyone[page * USERS_PAGE:(page + 1) * USERS_PAGE]
+    await _fill_names(context, chunk)
+    rows = []
+    for cid in chunk:
+        name, uname = _uinfo_get(cid)
+        mark = "⛔ " if cid in BANNED else ""
+        rows.append([InlineKeyboardButton(f"{mark}{_user_label(cid, name, uname)} · {cid}", callback_data=f"au:u:{cid}")])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("‹ Prev", callback_data=f"au:{kind}:{page - 1}"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton("Next ›", callback_data=f"au:{kind}:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("← Back", callback_data="admin_users")])
+    body = f"{len(everyone)} total · page {page + 1}/{pages}" if everyone else "Nobody here yet."
+    return f"<b>{title}</b>\n{ADMIN_RULE}\n{body}", InlineKeyboardMarkup(rows)
+
+async def admin_users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not is_admin(q.message.chat.id):
+        await q.answer("Admins only.", show_alert=True)
+        return
+    data = q.data
+    context.user_data.pop("awaiting", None)
+    if data == "admin_users":
+        await q.answer()
+        text, kb = users_panel()
+        await safe_edit(q.message, text, kb)
+        return
+    parts = data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+    arg = parts[2] if len(parts) > 2 else ""
+    if action == "find":
+        await q.answer()
+        context.user_data["awaiting"] = ADMIN_AWAIT_USER_FIND
+        await safe_edit(q.message,
+                        f"<b>🔍 FIND USER</b>\n{ADMIN_RULE}\nSend the user's <b>ID</b>, <b>@username</b> or <b>name</b>.\n\n"
+                        "<i>Searching by ID works for everyone. Names and usernames are searchable once the user has "
+                        "used the bot or appeared in the lists.</i>",
+                        build_back_keyboard("admin_users"))
+        return
+    if action in ("l", "b"):
+        await q.answer()
+        text, kb = await _users_list(context, action, int(arg or 0))
+        await safe_edit(q.message, text, kb)
+        return
+    try:
+        target = int(arg)
+    except ValueError:
+        await q.answer()
+        return
+    if action == "u":
+        await q.answer()
+        await _fill_names(context, [target])
+        text, kb = user_card(target)
+        await safe_edit(q.message, text, kb)
+        return
+    if action in ("ban", "unban", "del", "delc", "delb") and is_admin(target):
+        await q.answer("That is the admin account.", show_alert=True)
+        return
+    if action in ("ban", "unban"):
+        set_banned(target, action == "ban")
+        logs.fire(logs.log_user_management(context.bot, q.from_user.id,
+                                           "User banned" if action == "ban" else "User unbanned", target,
+                                           _user_label(target, *_uinfo_get(target))))
+        await q.answer("⛔ Banned" if action == "ban" else "✓ Unbanned")
+        text, kb = user_card(target)
+        await safe_edit(q.message, text, kb)
+        return
+    if action == "del":
+        await q.answer()
+        name, uname = _uinfo_get(target)
+        await safe_edit(
+            q.message,
+            f"<b>🗑 DELETE USER</b>\n{ADMIN_RULE}\n{html.escape(_user_label(target, name, uname), quote=False)} · <code>{target}</code>\n\n"
+            "Everything of this user is erased: settings, currencies, channels, reminders and history. "
+            "This cannot be undone.\n\n<i>If they are not banned they can start the bot again as a new user.</i>",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("🗑 Delete", callback_data=f"au:delc:{target}")],
+                [InlineKeyboardButton("⛔ Delete & ban", callback_data=f"au:delb:{target}")],
+                [InlineKeyboardButton("← Cancel", callback_data=f"au:u:{target}")],
+            ]))
+        return
+    if action in ("delc", "delb"):
+        try:
+            if action == "delb":
+                set_banned(target, True)
+            removed = delete_user_completely(target)
+        except Exception as e:
+            logger.error(f"delete_user_completely({target}) failed: {e}")
+            await q.answer("Could not delete (see the log).", show_alert=True)
+            return
+        await q.answer("✓ Deleted")
+        logs.fire(logs.log_user_management(context.bot, q.from_user.id,
+                                           "User deleted and banned" if action == "delb" else "User deleted",
+                                           target, details=f"{removed} records removed"))
+        await safe_edit(q.message,
+                        f"<b>✓ USER DELETED</b>\n{ADMIN_RULE}\n<code>{target}</code> · {removed} records removed"
+                        + ("\n⛔ and banned" if action == "delb" else ""),
+                        build_back_keyboard("admin_users"))
+        return
+    await q.answer()
+
+async def admin_users_find_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """The admin's reply after 🔍 Find user: an ID, a @username or part of a name."""
+    text = (update.message.text or "").strip()
+    context.user_data.pop("awaiting", None)
+    again = InlineKeyboardMarkup([[InlineKeyboardButton("🔍 Search again", callback_data="au:find")],
+                                  [InlineKeyboardButton("← Back", callback_data="admin_users")]])
+    digits = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
+    if re.fullmatch(r"-?\d{3,20}", digits):
+        cid = int(digits)
+        await _fill_names(context, [cid])
+        card, kb = user_card(cid)
+        await update.message.reply_text(card, reply_markup=kb, parse_mode=ParseMode.HTML)
+        return
+    needle = text.lstrip("@").strip().lower()
+    if len(needle) < 2:
+        await update.message.reply_text("✕ Send an ID, a @username or at least 2 letters of a name.",
+                                        reply_markup=again)
+        return
+    with closing(_db()) as conn:
+        rows = conn.execute("SELECT key, value FROM bot_config WHERE key LIKE ? AND LOWER(value) LIKE ? LIMIT 20",
+                            ("uinfo:%", f"%{needle}%")).fetchall()
+    found = []
+    for key, value in rows:
+        try:
+            d = json.loads(value)
+        except Exception:
+            continue
+        hay = f"{d.get('n', '')} {d.get('u', '')}".lower()
+        if needle in hay:
+            found.append((int(key[6:]), d.get("n", ""), d.get("u", "")))
+    if not found:
+        await update.message.reply_text(
+            "✕ Nobody found. Try the numeric ID, or browse ▤ All users.", reply_markup=again)
+        return
+    if len(found) == 1:
+        card, kb = user_card(found[0][0])
+        await update.message.reply_text(card, reply_markup=kb, parse_mode=ParseMode.HTML)
+        return
+    kb_rows = [[InlineKeyboardButton(f"{'⛔ ' if c in BANNED else ''}{_user_label(c, n, u)} · {c}", callback_data=f"au:u:{c}")]
+               for c, n, u in found[:USERS_PAGE]]
+    kb_rows.append([InlineKeyboardButton("🔍 Search again", callback_data="au:find")])
+    kb_rows.append([InlineKeyboardButton("← Back", callback_data="admin_users")])
+    await update.message.reply_text(f"<b>🔍 {len(found)} users found</b>\n{ADMIN_RULE}",
+                                    reply_markup=InlineKeyboardMarkup(kb_rows), parse_mode=ParseMode.HTML)
+
 # ───────────────  Admin: backup & restore  ─────────────
 def _admin_only(q) -> bool:
     return is_admin(q.message.chat.id)
@@ -1847,36 +2365,38 @@ async def _send_backup_file(context: ContextTypes.DEFAULT_TYPE, chat_id: int, pa
         )
 
 async def admin_backup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """⤓ Backup now: snapshot DB + .env into a zip and send it to the admin."""
+    """⤓ Backup now: snapshot DB + .env into a zip, send it to the admin, then delete it from the server."""
     q = update.callback_query
     if not _admin_only(q):
         await q.answer("Admins only.", show_alert=True)
         return
     await q.answer("Creating backup…")
     await context.bot.send_chat_action(chat_id=q.message.chat.id, action=ChatAction.UPLOAD_DOCUMENT)
+    path = None
     try:
         path = await asyncio.to_thread(bk.create_backup, "manual")
         counts = await asyncio.to_thread(bk.live_table_counts)
+        caption = (
+            f"<b>BACKUP</b>\n{ADMIN_RULE}\n"
+            f"<code>{path.name}</code>\n\n{_fmt_counts(counts)}\n\n"
+            + (f"▤ Download files included: {len(bk._build_files())}\n" if bk._build_files() else "") +
+            "△ Contains your bot token (.env). Keep it private.\n"
+            "Nothing is kept on the server: this file is the only copy.\n"
+            "To restore: /admin → ↺ Restore → send this file."
+        )
+        await _send_backup_file(context, q.message.chat.id, path, caption)
+        logs.fire(logs.log_backup(context.bot, "Backup created and sent to the admin", path.name))
     except bk.BackupError as e:
+        logs.fire(logs.log_backup(context.bot, "Backup failed", str(e)))
         await q.message.reply_text(f"✕ {e}")
         return
     except Exception as e:
         logger.exception("Backup failed")
-        await q.message.reply_text(f"✕ Backup failed: {e}")
+        logs.fire(logs.log_backup(context.bot, "Backup failed", str(e)))
+        await q.message.reply_text(f"✕ Backup failed, nothing was saved: {e}")
         return
-    caption = (
-        f"<b>BACKUP</b>\n{ADMIN_RULE}\n"
-        f"<code>{path.name}</code>\n\n{_fmt_counts(counts)}\n\n"
-        + (f"▤ Download files included: {len(bk._build_files())}\n" if bk._build_files() else "") +
-        "△ Contains your bot token (.env). Keep it private.\n"
-        "To restore: /admin → ↺ Restore → send this file."
-    )
-    try:
-        await _send_backup_file(context, q.message.chat.id, path, caption)
-    except Exception as e:
-        logger.exception("Sending backup failed")
-        await q.message.reply_text(f"△ Backup saved on server as <code>{path.name}</code> but sending failed: {e}",
-                                   parse_mode=ParseMode.HTML)
+    finally:
+        bk.discard_backup(path)          # deleted from the server whether or not it was delivered
     await q.message.reply_text(build_admin_menu_text(), reply_markup=build_admin_menu_keyboard(),
                                parse_mode=ParseMode.HTML)
 
@@ -1917,6 +2437,9 @@ async def _show_restore_preview(message, context: ContextTypes.DEFAULT_TYPE, pla
 async def admin_document_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receives the backup file after tapping ↺ Restore, or EA builds (EA versions)."""
     cid = update.effective_chat.id
+    if context.user_data.get("awaiting") == AWAIT_CAL_TIME and update.message.text:
+        await cal_time_text(update, context)
+        return
     if context.user_data.get("awaiting") == AWAIT_BRIEF_TIME and update.message.text:
         await brief_time_text(update, context)
         return
@@ -1999,9 +2522,22 @@ async def admin_restore_confirm_callback(update: Update, context: ContextTypes.D
         plan.cleanup()
         logger.exception("Restore failed")
         await q.message.edit_text(
-            f"✕ Restore failed: {e}\n\nIf anything looks off, use ▦ Saved backups → the "
-            "latest <i>pre-restore</i> backup to roll back.", parse_mode=ParseMode.HTML)
+            f"✕ Restore failed: {e}", parse_mode=ParseMode.HTML)
         return
+
+    logs.fire(logs.log_backup(context.bot, "Restore completed",
+                              f"Settings restored: {'yes' if include_settings and settings_changed else 'no'}"))
+    safety_sent = False
+    if safety:
+        try:      # the pre-restore safety backup goes to the admin in Telegram, then it is deleted from the server
+            await _send_backup_file(context, q.message.chat.id, safety,
+                                    f"<b>PREVIOUS DATA</b>\n<code>{safety.name}</code>\n"
+                                    "Backup of what was here before the restore. To undo: ↺ Restore → send this file.")
+            safety_sent = True
+        except Exception as e:
+            logger.warning(f"Could not send the pre-restore backup: {e}")
+        finally:
+            bk.discard_backup(safety)
 
     text = (
         f"<b>RESTORE COMPLETE</b>\n{ADMIN_RULE}\n"
@@ -2009,71 +2545,14 @@ async def admin_restore_confirm_callback(update: Update, context: ContextTypes.D
         f"{_fmt_counts(counts)}\n\n"
         f"Active server: <code>{API_BASE}</code>\n"
     )
-    if safety:
-        text += f"\nPrevious data saved as <code>{safety.name}</code> (▦ Saved backups)."
+    if safety_sent:
+        text += "\nYour previous data was sent to you as a file (nothing is kept on the server)."
     if include_settings and settings_changed:
         text += "\n\n↻ Settings restored, restarting the bot in a few seconds…"
         await q.message.edit_text(text, parse_mode=ParseMode.HTML)
         context.job_queue.run_once(_restart_job, when=3)
         return
     await q.message.edit_text(text, reply_markup=build_admin_menu_keyboard(), parse_mode=ParseMode.HTML)
-
-async def admin_backups_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """▦ Saved backups: backups stored on the server (manual + pre-restore)."""
-    q = update.callback_query
-    if not _admin_only(q):
-        await q.answer("Admins only.", show_alert=True)
-        return
-    await q.answer()
-    backups = bk.list_backups()
-    if not backups:
-        await q.message.edit_text("No backups on the server yet. Tap ⤓ Backup now first.",
-                                  reply_markup=build_back_keyboard())
-        return
-    kb = [[InlineKeyboardButton(_backup_label(p), callback_data=f"adminbk_{p.name}")] for p in backups]
-    kb.append([InlineKeyboardButton("← Back", callback_data="admin_menu")])
-    await q.message.edit_text(
-        f"<b>SAVED BACKUPS</b>\n{ADMIN_RULE}\nKeeping the last {cfg.BACKUP_KEEP}. Tap one to send or restore it.",
-        reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML
-    )
-
-async def admin_backup_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    if not _admin_only(q):
-        await q.answer("Admins only.", show_alert=True)
-        return
-    prefix, name = q.data.split("_", 1)
-    path = bk.resolve_backup_name(name)
-    if path is None:
-        await q.answer("That backup no longer exists.", show_alert=True)
-        return
-    if prefix == "adminbksend":
-        await q.answer("Sending…")
-        await _send_backup_file(context, q.message.chat.id, path, f"<code>{path.name}</code>")
-        return
-    if prefix == "adminbkrs":
-        await q.answer()
-        _clear_pending_restore(context)
-        try:
-            plan = await asyncio.to_thread(bk.prepare_restore, path)
-        except bk.BackupError as e:
-            await q.message.reply_text(f"✕ {e}")
-            return
-        await _show_restore_preview(q.message, context, plan)
-        return
-    # adminbk_<name>: details
-    await q.answer()
-    await q.message.edit_text(
-        f"<b>BACKUP</b>\n{ADMIN_RULE}\n{_backup_label(path)}\n<code>{bk.describe(path)}</code>",
-        reply_markup=InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("⤒ Send to me", callback_data=f"adminbksend_{path.name}"),
-                InlineKeyboardButton("↺ Restore this", callback_data=f"adminbkrs_{path.name}"),
-            ],
-            [InlineKeyboardButton("← Back", callback_data="admin_backups")],
-        ]),
-        parse_mode=ParseMode.HTML
-    )
 
 def _subscribe_and_get_time(chat_id: int) -> str:
     on, time_ = get_brief(chat_id)
@@ -2095,7 +2574,8 @@ async def brief_time_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hint = local_hint(language, new)
     notice = (f"✓ <b>ذخیره شد.</b> از الان هر روز کاری ساعت <b>{new}</b> ({tz.clock_note(language, cid)}) خبرها برات میاد."
               if language == "fa" else
-              f"✓ <b>Saved.</b> From now on you get the news every weekday at <b>{new}</b> ({tz.clock_note(language, cid)}).")
+              i18n.t(language, "✓ <b>Saved.</b> From now on you get the news every weekday at <b>{time}</b> ({zone}).")
+              .format(time=new, zone=tz.clock_note(language, cid)))
     text, kb = brief_panel(language, cid, notice)
     sent = await update.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     remember_news_menu(cid, sent.message_id)
@@ -2144,6 +2624,17 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             and is_admin(update.effective_chat.id)):
         await admin_cache_times_input(update, context)
         return
+    if (context.user_data.get("awaiting") == ADMIN_AWAIT_LOG_GROUP and update.message.text
+            and is_admin(update.effective_chat.id)):
+        await admin_log_group_input(update, context)
+        return
+    if (context.user_data.get("awaiting") == ADMIN_AWAIT_USER_FIND and update.message.text
+            and is_admin(update.effective_chat.id)):
+        await admin_users_find_input(update, context)
+        return
+    if context.user_data.get("awaiting") == AWAIT_CAL_TIME and update.message.text:
+        await cal_time_text(update, context)     # waiting for the calendar time
+        return
     if context.user_data.get("awaiting") == AWAIT_BRIEF_TIME and update.message.text:
         await brief_time_text(update, context)   # waiting for a time: parse it, or explain the right format
         return
@@ -2158,9 +2649,49 @@ async def myid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Returns the chat id — useful for setting ADMIN_CHAT_ID."""
     await update.message.reply_text(f"ID Chat ID: <code>{update.effective_chat.id}</code>", parse_mode=ParseMode.HTML)
 
+# ───────────────  ✨ /start welcome screen + the 3 main buttons (News · Calendar · Reminders)  ─────────────
+WELCOME = {
+    'fa': dict(hi="سلام <b>{name}</b> 👋", hi0="سلام 👋",
+               body="به ربات اخبار فارکس خوش اومدی ✨\nاخبار، تقویم و یادآورها، همه یک‌جا و همیشه دم‌دست.",
+               ask="👇 از منوی پایین شروع کن"),
+    'en': dict(hi="Hi <b>{name}</b> 👋", hi0="Hi 👋",
+               body="Welcome to the Forex News bot ✨\nNews, calendar and reminders, all in one place and always at hand.",
+               ask="👇 Start from the menu below"),
+    'hi': dict(hi="नमस्ते <b>{name}</b> 👋", hi0="नमस्ते 👋",
+               body="फॉरेक्स न्यूज़ बॉट में आपका स्वागत है ✨\nसमाचार, कैलेंडर और अनुस्मारक, सब एक ही जगह।",
+               ask="👇 नीचे के मेनू से शुरू करें"),
+    'ru': dict(hi="Привет, <b>{name}</b> 👋", hi0="Привет 👋",
+               body="Добро пожаловать в бот новостей Forex ✨\nНовости, календарь и напоминания — всё в одном месте.",
+               ask="👇 Начните с меню внизу"),
+    'id': dict(hi="Halo <b>{name}</b> 👋", hi0="Halo 👋",
+               body="Selamat datang di bot Berita Forex ✨\nBerita, kalender, dan pengingat, semua di satu tempat.",
+               ask="👇 Mulai dari menu di bawah"),
+    'pt-BR': dict(hi="Olá, <b>{name}</b> 👋", hi0="Olá 👋",
+               body="Bem-vindo ao bot de Notícias Forex ✨\nNotícias, calendário e lembretes, tudo em um só lugar.",
+               ask="👇 Comece pelo menu abaixo"),
+    'vi': dict(hi="Xin chào <b>{name}</b> 👋", hi0="Xin chào 👋",
+               body="Chào mừng bạn đến với bot Tin Forex ✨\nTin tức, lịch và nhắc nhở, tất cả trong một nơi.",
+               ask="👇 Bắt đầu từ menu bên dưới"),
+}
+
+def welcome_text(language: str, first_name: str | None = None) -> str:
+    w = WELCOME.get(language) or WELCOME['en']
+    name = html.escape((first_name or "").strip(), quote=False)
+    greet = w['hi'].format(name=name) if name else w['hi0']
+    return f"{greet}\n\n{w['body']}\n\n{w['ask']}"
+
+async def show_welcome(message, context, cid: int, language: str, first_name: str | None = None):
+    """Welcome message that installs the three main buttons under the input box:
+    Economic News · Calendar · Reminders."""
+    await message.reply_text(welcome_text(language, first_name), reply_markup=menu_kb(language, cid),
+                             parse_mode=ParseMode.HTML)
+    _mark_menu_kb(cid, language)      # keyboard is already installed: no extra "bot updated" message
+
 # ───────────────  Commands  ─────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
+    # Deep link from the Jade Tunnel bot: t.me/<this bot>?start=calendar opens the calendar section directly
+    want_calendar = bool(context.args) and context.args[0].lower() in ("calendar", "cal")
 
     # ---------- بررسی عضویت اولیه برای اطلاع به ادمین ----------
     conn = _db()
@@ -2178,66 +2709,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'first_name': user.first_name,
             'last_name': user.last_name
         }))
+        logs.fire(logs.log_user_join(context.bot, cid, user.username, user.first_name, user.last_name,
+                                     user.language_code))
 
     conn.close()
 
     # ---------- بررسی زبان کاربر ----------
     language = get_stored_language(cid)
     if language is None:
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("◍ فارسی", callback_data="setlang_fa"),
-                InlineKeyboardButton("◍ English", callback_data="setlang_en")
-            ]
-        ])
+        context.user_data["fresh_start"] = True      # after the language is picked, show the welcome screen
+        if want_calendar:
+            context.user_data["after_lang"] = "calendar"   # ...and then the calendar they asked for
+        buttons = [InlineKeyboardButton("◍ " + name, callback_data="setlang_" + code)
+                   for code, name in locales.LANGUAGE_NAMES.items()]
+        keyboard = InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
         await update.message.reply_text(
-            "Please select your language:\nلطفاً زبان خود را انتخاب کنید:",
+            LANGUAGE_PROMPT,
             reply_markup=keyboard
         )
         return
 
-    await show_main_menu_in_place(update.message, context, cid, language)
+    if want_calendar:
+        await calendar_cmd(update, context)
+        return
+    await show_welcome(update.message, context, cid, language, update.effective_user.first_name)
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_typing(context, update.effective_chat.id)
-    cid = update.effective_chat.id
-    language = get_user_language(cid)
-    
-    messages = {
-        'fa': (
-            "<b>▮ راهنما</b>\n\n"
-            "این ربات خبرهای اقتصادی مهم بازار رو (از سایت Forex Factory) نشونت میده.\n\n"
-            "<b>چطور استفاده کنم؟</b>\n"
-            "1⃣ «امروز»، «فردا» یا «این هفته» رو بزن تا خبرها رو ببینی.\n"
-            "2⃣ «انتخاب ارز و اهمیت» رو بزن و ارزهایی که برات مهمه رو روشن کن.\n"
-            "3⃣ «ارسال خودکار» رو بزن تا هر روز کاری خبرها خودکار برات بیاد. ساعتش رو خودت می‌نویسی (مثلاً <code>7:23</code>).\n"
-            "داخل «ارسال خودکار» یکی از دو روش رو انتخاب می‌کنی: «یک بار در روز» (ساعتش با خودته) یا «۳۰ دقیقه قبل از هر خبر».\n\n"
-            "△ همه‌ی ساعت‌ها <b>{zone}</b> هستن (از «🌍 منطقه زمانی» عوضش کن).\n\n"
-            "▦ «تقویم»: تاریخ امروز، شمسی و میلادی.\n"
-            "◷ «یادآورها»: یه یادآور برای خودت بساز."
-        ),
-        'en': (
-            "<b>▮ Help</b>\n\n"
-            "This bot shows you the important economic news from Forex Factory.\n\n"
-            "<b>How do I use it?</b>\n"
-            "1⃣ Tap “Today”, “Tomorrow” or “This week” to see the news.\n"
-            "2⃣ Tap “Choose currencies & importance” and turn on the currencies you care about.\n"
-            "3⃣ Tap “Auto-send” to get the news automatically every weekday. You type the time yourself (e.g. <code>7:23</code>).\n"
-            "Inside “Auto-send” you choose one way: “Once a day” (you pick the time) or “30 min before each news”.\n\n"
-            "△ All times are <b>{zone}</b> (change it from “🌍 Time zone”).\n\n"
-            "▦ “Calendar”: today's date.\n"
-            "◷ “Reminders”: create a reminder for yourself."
-        ),
-    }
-    
-    labels = KB_LABELS[language]
-    help_keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(labels['menu'], callback_data="main_menu")],
-        [InlineKeyboardButton(labels['cal'], callback_data="cal"),
-         InlineKeyboardButton(labels['rem'], callback_data="rem")],
-    ])
-    await update.message.reply_text(messages[language].replace("{zone}", tz.clock_note(language, cid)),
-                                    reply_markup=help_keyboard, parse_mode=ParseMode.HTML)
+async def language_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/language: the language picker (same screen as the 🌍 settings use)."""
+    context.user_data.pop("awaiting", None)
+    buttons = [InlineKeyboardButton("◍ " + name, callback_data="setlang_" + code)
+               for code, name in locales.LANGUAGE_NAMES.items()]
+    keyboard = InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
+    await update.message.reply_text(LANGUAGE_PROMPT, reply_markup=keyboard)
 
 async def show_brief(update: Update, context: ContextTypes.DEFAULT_TYPE, toast: str | None = None):
     """Daily High-Impact News panel: edits the message when coming from a button, sends a new one for commands."""
@@ -2293,21 +2796,21 @@ async def brief_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data in ("brief_mode_before", "brief_alert_toggle"):
         if get_pre_news(cid) and not get_brief(cid)[0]:      # already chosen: tapping again turns it off
             set_pre_news(cid, False, language)
-            await show_brief(update, context, "◌ خاموش شد" if language == "fa" else "◌ Turned off")
+            await show_brief(update, context, "◌ خاموش شد" if language == "fa" else i18n.t(language, "◌ Turned off"))
             return
         set_brief_on(cid, False, language)          # the two options exclude each other
         set_pre_news(cid, True, language)
         await show_brief(update, context, "◴ از الان ۳۰ دقیقه قبل از هر خبر برات میاد" if language == "fa"
-                         else "◴ You'll get each news 30 minutes before it is released")
+                         else i18n.t(language, "◴ You'll get each news 30 minutes before it is released"))
         return
     if data == "brief_off_all":
         set_brief_on(cid, False, language)
         set_pre_news(cid, False, language)
-        await show_brief(update, context, "◌ خاموش شد" if language == "fa" else "◌ Turned off")
+        await show_brief(update, context, "◌ خاموش شد" if language == "fa" else i18n.t(language, "◌ Turned off"))
         return
     if data == "brief_none":
         set_brief_on(cid, False, language)
-        await q.answer("◷ ارسال روزانه خاموش شد" if language == "fa" else "◷ Daily delivery off")
+        await q.answer("◷ ارسال روزانه خاموش شد" if language == "fa" else i18n.t(language, "◷ Daily delivery off"))
         context.user_data.pop("awaiting", None)
         await show_brief(update, context)
         return
@@ -2341,11 +2844,13 @@ def news_caption(events: list[dict], language: str, kinds: list[str], limit: int
     """Caption for the calendar picture: title + dates + ONLY the important (High) news in a quote block."""
     day = tz.today_for(language, cid)
     c = tz.city(tz.zone_name(language, cid), language)
-    title = {"fa": f"خبرهای اقتصادی امروز به وقت {c}", "en": f"Today's Economic News, {c} Time"}[language]
+    title = (f"{locales.TEXT[language]['news']} · {locales.TEXT[language]['today']} · {c}"
+             if language in locales.NEW else
+             {"fa": f"خبرهای اقتصادی امروز به وقت {c}", "en": f"Today's Economic News, {c} Time"}[language])
     header = "\n".join([f"<b>▤ {title}</b>", "", *caption_date_lines(language, kinds, day)])
     high = [tz.localize_event(e, language, cid) for e in events if e.get("Impact", "High") == "High"]
     if not high:
-        lines = ["بدون خبر مهم 🔴 برای ارزهای انتخابی." if language == "fa" else "No high-impact 🔴 news for your currencies."]
+        lines = ["بدون خبر مهم 🔴 برای ارزهای انتخابی." if language == "fa" else i18n.t(language, "No high-impact 🔴 news for your currencies.")]
     else:
         lines = [f"🔴 {html.escape(str(e.get('Currency', '')), quote=False)} · "
                  f"{html.escape(str(e.get('Time', '')), quote=False)} — "
@@ -2385,18 +2890,29 @@ async def digest_loop(context: ContextTypes.DEFAULT_TYPE):
     if not subs_map:
         return
     langs = _all_languages()
-    clocks = tz.bulk_now({c_: ("fa" if langs.get(c_) == "fa" else "en") for c_ in subs_map})   # each user's own clock
+    clocks = tz.bulk_now({c_: langs.get(c_) or "en" for c_ in subs_map})   # each user's own clock
     recipients = []
     for cid_, t in subs_map.items():
         now_ = clocks[cid_]
-        if t == now_.strftime("%H:%M") and now_.weekday() < 5:
-            recipients.append(cid_)
+        if now_.weekday() >= 5:
+            continue
+        try:
+            h_, m_ = map(int, t.split(":"))
+        except ValueError:
+            continue
+        due_ = now_.replace(hour=h_, minute=m_, second=0, microsecond=0)
+        late_ = (now_ - due_).total_seconds()
+        # Not "exactly this minute" any more: from the set time until DIGEST_GRACE_MIN minutes later, once per
+        # local day (last-sent is stored), so a slow tick, a restart or a busy minute can no longer lose the day.
+        if 0 <= late_ < DIGEST_GRACE_MIN * 60 and get_config(f"digest_last_{cid_}") != now_.date().isoformat():
+            recipients.append((cid_, now_.date().isoformat()))
 
     if not recipients:
         return
 
-    for cid in recipients:
+    for cid, local_day in recipients:
         try:
+            set_config(f"digest_last_{cid}", local_day)   # mark first: never send twice even if sending is slow
             language = get_user_language(cid)
             allowed = get_user_currencies(cid)
             impacts = get_user_impacts(cid)
@@ -2448,7 +2964,7 @@ async def pre_news_loop(context: ContextTypes.DEFAULT_TYPE):
     """Send selected events in the minute beginning 30 minutes before release."""
     with closing(_db()) as conn:
         recipients = [row[0] for row in conn.execute(
-            "SELECT chat_id FROM subscribers WHERE pre_news_on = 1").fetchall()]
+            "SELECT chat_id FROM subscribers WHERE pre_news_on = 1").fetchall() if int(row[0]) not in BANNED]
     if not recipients:
         return
     now = datetime.now(NY_TZ)
@@ -2495,7 +3011,7 @@ async def pre_news_loop(context: ContextTypes.DEFAULT_TYPE):
                 for start in range(0, len(items), 3):
                     chunk = items[start:start + 3]
                     title = ("◴ <b>۳۰ دقیقه تا انتشار خبر</b>" if language == "fa"
-                             else "◴ <b>News in 30 minutes</b>")
+                             else i18n.t(language, "◴ <b>News in 30 minutes</b>"))
                     pages = news_pages(endpoint, [event for _, event in chunk], [currency],
                                        impacts, language, get_cal(cid)["kinds"],
                                        day=now.date(), limit=TG_LIMIT - len(title) - 2, cid=cid)
@@ -2566,25 +3082,34 @@ def tz_settings_view(language: str, cid: int) -> tuple[str, InlineKeyboardMarkup
     """🌍 Language + time zone on one screen. 'Automatic' (the default) = the zone that goes with the language."""
     fa = language == "fa"
     auto_on, cur = tz.is_auto(cid), tz.zone_name(language, cid)
-    if fa:
+    if language in locales.NEW:
+        tr = locales.TEXT[language]
+        text = (f"🌍 <b>{tr['language']} · {tr['zone']}</b>\n\n"
+                f"{tr['language']}: <b>{locales.LANGUAGE_NAMES[language]}</b>\n"
+                f"{tr['zone']}: <b>{html.escape(tz.status_label(language, cid))}</b>\n\n{tr['info']}")
+    elif fa:
         text = ("🌍 <b>زبان و منطقه زمانی</b>\n\n"
                 f"زبان: <b>فارسی</b>\nمنطقه زمانی: <b>{tz.status_label(language, cid)}</b>\n\n"
                 "ساعت ارسال خبرها، ساعت خبرها، تاریخ و یادآورها همه به وقت همین منطقه‌ست.\n"
-                "«خودکار» یعنی منطقه با زبان عوض می‌شه (فارسی ← تهران، English ← نیویورک).")
+                "«خودکار» منطقه رو با زبان تنظیم می‌کنه. اگر خودت منطقه‌ای انتخاب کنی، همون حفظ می‌شه.")
     else:
         text = ("🌍 <b>Language & time zone</b>\n\n"
                 f"Language: <b>English</b>\nTime zone: <b>{tz.status_label(language, cid)}</b>\n\n"
                 "Send times, news times, dates and reminders all use this zone.\n"
-                "“Automatic” follows the language (Persian → Tehran, English → New York).")
-    rows = [[InlineKeyboardButton(("✓ " if fa else "") + "◍ فارسی", callback_data="tzs_lang_fa"),
-             InlineKeyboardButton(("" if fa else "✓ ") + "◍ English", callback_data="tzs_lang_en")],
-            [InlineKeyboardButton(("✓ " if auto_on else "") + ("🔄 خودکار · " if fa else "🔄 Automatic · ")
-                                  + tz.city(tz.auto_name(language), language), callback_data="tzs_auto")]]
-    btns = [InlineKeyboardButton(("✓ " if (name == cur and not auto_on) else "") + (fa_ if fa else en_),
+                "“Automatic” follows the language. A manually selected time zone is kept when you change languages.")
+    buttons = [InlineKeyboardButton(("✓ " if language == code else "") + "◍ " + name,
+                                    callback_data="tzs_lang_" + code)
+               for code, name in locales.LANGUAGE_NAMES.items()]
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    auto_label = locales.TEXT[language]["automatic"] if language in locales.NEW else ("خودکار" if fa else i18n.t(language, "Automatic"))
+    rows.append([InlineKeyboardButton(("✓ " if auto_on else "") + "🔄 " + auto_label + " · "
+                                      + tz.city(tz.auto_name(language), language), callback_data="tzs_auto")])
+    btns = [InlineKeyboardButton(("✓ " if (name == cur and not auto_on) else "") + tz.label(name, language),
                                  callback_data=f"tzs_z_{i}")
             for i, (name, fa_, en_) in enumerate(tz.TIMEZONES)]
     rows += [btns[i:i + 2] for i in range(0, len(btns), 2)]
-    rows.append([InlineKeyboardButton("‹ بازگشت" if fa else "‹ Back", callback_data="main_menu")])
+    rows.append([InlineKeyboardButton("‹ " + (locales.TEXT[language]["back"] if language in locales.NEW
+                                              else "بازگشت" if fa else i18n.t(language, "Back")), callback_data="main_menu")])
     return text, InlineKeyboardMarkup(rows)
 
 async def tz_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2595,9 +3120,11 @@ async def tz_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if data.startswith("tzs_lang_"):
         new = data.rsplit("_", 1)[1]
         if new in LANGS:
-            set_user_language(cid, new)         # also moves an automatic zone with the language
+            if not set_user_language(cid, new):
+                await q.answer(i18n.t(new, "Could not save language. Please try again."), show_alert=True)
+                return
             language = new
-            toast = {"fa": "✓ زبان: فارسی", "en": "✓ Language: English"}[new] + " · 🌍 " + tz.status_label(new, cid)
+            toast = "✓ " + locales.LANGUAGE_NAMES[new] + " · 🌍 " + tz.status_label(new, cid)
     elif data == "tzs_auto":
         tz.set_zone(cid, None, language)
         toast = "✓ 🌍 " + tz.status_label(language, cid)
@@ -2617,6 +3144,8 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = q.data
     if context.user_data.get("awaiting") == AWAIT_BRIEF_TIME and not data.startswith("brief_"):
         context.user_data.pop("awaiting", None)
+    if context.user_data.get("awaiting") == AWAIT_CAL_TIME and not data.startswith("cal"):
+        context.user_data.pop("awaiting", None)
     if (data in ("choose_currencies", "currencies_done", "main_menu", "my_channel",
                  "today", "yesterday", "tomorrow", "week", "brief", "subscribe", "unsubscribe")
             or data.startswith(("news_page_", "togglecur_", "toggleimp_", "brief_", "setlang_",
@@ -2633,17 +3162,10 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if data == "change_language":
         language = get_user_language(q.message.chat.id)
-        messages = {
-            'fa': "لطفاً زبان خود را انتخاب کنید:",
-            'en': "Please select your language:"
-        }
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("◍ فارسی", callback_data="setlang_fa"),
-                InlineKeyboardButton("◍ English", callback_data="setlang_en")
-            ]
-        ])
-        await q.message.edit_text(messages[language], reply_markup=keyboard)
+        buttons = [InlineKeyboardButton("◍ " + name, callback_data="setlang_" + code)
+                   for code, name in locales.LANGUAGE_NAMES.items()]
+        keyboard = InlineKeyboardMarkup([buttons[i:i + 2] for i in range(0, len(buttons), 2)])
+        await q.message.edit_text(LANGUAGE_PROMPT, reply_markup=keyboard)
         await q.answer()
         return
     if data == "choose_currencies":
@@ -2662,7 +3184,7 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pages and 0 <= page < len(pages):
             await safe_edit(q.message, pages[page], news_page_keyboard(language, page, len(pages), cid, selected))
         else:
-            expired = "این صفحه منقضی شده؛ دوباره بازش کن." if language == "fa" else "This page expired; open it again."
+            expired = "این صفحه منقضی شده؛ دوباره بازش کن." if language == "fa" else i18n.t(language, "This page expired; open it again.")
             await safe_edit(q.message, main_menu_text(language, cid) + "\n\n" + expired,
                             news_page_keyboard(language, 0, 1, cid, selected))
         return
@@ -2718,11 +3240,17 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "chs" or data.startswith(("chs_", "chs:")):
         await channel_style.on_callback(update, context, get_user_language(q.message.chat.id))
         return
+    if data == "admin_users" or data.startswith("au:"):
+        await admin_users_callback(update, context)
+        return
     if data == "admin_menu":
         await admin_menu_callback(update, context)
         return
     if data == "admin_restartmsg":
         await admin_restartmsg_callback(update, context)
+        return
+    if data == "admin_log" or data.startswith("adminlog_"):
+        await admin_log_callback(update, context)
         return
     if data.startswith("ea:"):
         if not is_admin(q.message.chat.id):
@@ -2757,12 +3285,6 @@ async def button_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "admin_restore":
         await admin_restore_menu_callback(update, context)
         return
-    if data == "admin_backups":
-        await admin_backups_list_callback(update, context)
-        return
-    if data.startswith(("adminbk_", "adminbksend_", "adminbkrs_")):
-        await admin_backup_item_callback(update, context)
-        return
     if data.startswith("adminrs_"):
         await admin_restore_confirm_callback(update, context)
         return
@@ -2778,22 +3300,25 @@ async def yesterday(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def today(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
     language = get_user_language(cid)
-    await fetch_and_send(update, ctx, "today", "Today's Economic News" if language == 'en' else "خبرهای اقتصادی امروز")
+    await fetch_and_send(update, ctx, "today", "خبرهای اقتصادی امروز" if language == 'fa' else "Today's Economic News")
 
 async def tomorrow(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
     language = get_user_language(cid)
-    await fetch_and_send(update, ctx, "tomorrow", "Tomorrow's Economic News" if language == 'en' else "خبرهای اقتصادی فردا")
+    await fetch_and_send(update, ctx, "tomorrow", "خبرهای اقتصادی فردا" if language == 'fa' else "Tomorrow's Economic News")
 
 async def week(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cid = update.effective_chat.id
     language = get_user_language(cid)
-    await fetch_and_send(update, ctx, "weekly", "This Week's Economic News" if language == 'en' else "خبرهای اقتصادی این هفته")
+    await fetch_and_send(update, ctx, "weekly", "خبرهای اقتصادی این هفته" if language == 'fa' else "This Week's Economic News")
     
 IMPACT_LABEL = {
     'fa': {"High": "🔴 زیاد", "Medium": "🟠 متوسط", "Low": "🟡 کم"},
     'en': {"High": "🔴 High", "Medium": "🟠 Medium", "Low": "🟡 Low"},
 }
+for _lang in locales.NEW:
+    IMPACT_LABEL[_lang] = {level: dot + " " + image_locale.label(_lang, level.lower())
+                           for level, dot in (("High", "🔴"), ("Medium", "🟠"), ("Low", "🟡"))}
 CURRENCY_SCREEN = {
     'fa': "⇄ <b>ارزها</b>\nروی ارزهایی که برات مهمه بزن (✓ یعنی روشن). فقط خبر همین ارزها میاد.\n\n"
           "≡ <b>اهمیت خبر</b>\n🔴 زیاد = خبرهای خیلی مهم که بازار رو تکون میدن (پیشنهاد ما)\n"
@@ -2804,6 +3329,8 @@ CURRENCY_SCREEN = {
           "🟠 Medium · 🟡 Low\nTurn on any level to get those news too.\n\n"
           "When you're done, tap “Save and Return”.",
 }
+for _lang in locales.NEW:
+    CURRENCY_SCREEN[_lang] = i18n.t(_lang, CURRENCY_SCREEN['en'])
 
 def build_currency_keyboard(selected: list[str], language: str = 'en',
                             impacts: list[str] | None = None) -> InlineKeyboardMarkup:
@@ -2828,7 +3355,7 @@ def build_currency_keyboard(selected: list[str], language: str = 'en',
         'fa': "‹ ذخیره و بازگشت",
         'en': "‹ Save and Return"
     }
-    kb.append([InlineKeyboardButton(save_button[language], callback_data="currencies_done")])
+    kb.append([InlineKeyboardButton(save_button.get(language, "‹ " + locales.TEXT[language]["save"] if language in locales.NEW else save_button["en"]), callback_data="currencies_done")])
     return InlineKeyboardMarkup(kb)
 
 def get_user_impacts(chat_id: int) -> list[str]:
@@ -2860,7 +3387,7 @@ async def toggle_impact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     impacts = get_user_impacts(cid)
     if level in impacts:
         if len(impacts) == 1:
-            await q.answer("حداقل یکی باید روشن بمونه" if language == 'fa' else "Keep at least one on", show_alert=False)
+            await q.answer("حداقل یکی باید روشن بمونه" if language == 'fa' else i18n.t(language, "Keep at least one on"), show_alert=False)
             return
         impacts.remove(level)
     else:
@@ -2904,17 +3431,17 @@ async def toggle_currency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected = get_user_currencies(cid)
     if currency in selected:
         if len(selected) == 1:
-            await q.answer("حداقل یک ارز انتخاب کن" if language == "fa" else "Keep at least one currency selected")
+            await q.answer("حداقل یک ارز انتخاب کن" if language == "fa" else i18n.t(language, "Keep at least one currency selected"))
             return
         selected.remove(currency)
     else:
         selected.append(currency)
     set_user_currencies(cid, selected)
-    messages = {
-        'fa': f"✓ {currency} {'حذف شد' if currency not in selected else 'اضافه شد'}",
-        'en': f"✓ {currency} {'removed' if currency not in selected else 'added'}"
-    }
-    await q.answer(messages[language])
+    if language == 'fa':
+        toast = f"✓ {currency} {'حذف شد' if currency not in selected else 'اضافه شد'}"
+    else:
+        toast = i18n.t(language, "✓ {currency} removed" if currency not in selected else "✓ {currency} added").format(currency=currency)
+    await q.answer(toast)
     await safe_edit(q.message, CURRENCY_SCREEN[language],
                     build_currency_keyboard(get_user_currencies(cid), language, get_user_impacts(cid)))
 
@@ -2965,9 +3492,11 @@ async def notify_restart(application):
         )
 
         for (chat_id,) in users:
+            if int(chat_id) in BANNED:
+                continue
             try:
                 language = get_user_language(chat_id)
-                msg = restart_message_fa if language == 'fa' else restart_message_en
+                msg = restart_message_fa if language == 'fa' else i18n.t(language, restart_message_en)
                 await application.bot.send_message(
                     chat_id=chat_id,
                     text=msg,
@@ -2988,16 +3517,38 @@ async def on_error(update, context: ContextTypes.DEFAULT_TYPE):
     """Never fail silently: log the traceback, and tell the user something went wrong."""
     logger.error("Unhandled error", exc_info=context.error)
     try:
+        import traceback
+        err = context.error
+        tb = "".join(traceback.format_exception(type(err), err, err.__traceback__)) if err else "unknown error"
+        who = update.effective_chat.id if isinstance(update, Update) and update.effective_chat else None
+        logs.fire(logs.log_system_error(context.bot, tb, f"user {who}" if who else ""))
+    except Exception:
+        pass
+    try:
         if isinstance(update, Update) and update.effective_chat and update.effective_chat.type == "private":
-            await context.bot.send_message(update.effective_chat.id, "△ Something went wrong, please try again. / مشکلی پیش اومد، دوباره امتحان کن.")
+            lang = get_user_language(update.effective_chat.id)
+            msg = ("△ مشکلی پیش اومد، دوباره امتحان کن." if lang == "fa"
+                   else i18n.t(lang, "△ Something went wrong, please try again."))
+            await context.bot.send_message(update.effective_chat.id, msg)
     except Exception:
         pass
 
 async def post_init(application):
     await application.bot.set_my_commands(EN_COMMANDS)
     await application.bot.set_my_commands(FA_COMMANDS, language_code="fa")
+    for code, (menu_text, lang_text) in OTHER_COMMANDS.items():
+        await application.bot.set_my_commands([BotCommand("start", menu_text), BotCommand("language", lang_text)],
+                                              language_code=code)
     # Native Telegram Menu button (next to the input box) for ALL users, independent of /start
     await application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    gid = get_log_group_id()
+    if gid:
+        try:
+            logs.init_logger(gid, _log_state_load, _log_state_save)
+            await logs.create_all_topics(application.bot)
+            await logs.log_bot_started(application.bot)
+        except Exception as e:
+            logger.error(f"Log group setup failed: {e}")
     await notify_restart(application)
 
 def main():
@@ -3005,6 +3556,7 @@ def main():
         print("TELEGRAM_BOT_TOKEN is empty. Run: python bot_settings.py")
         sys.exit(1)
     ensure_db()
+    load_banned()
     load_api_base_from_db()  # use admin's saved server, if any
     app = (
         ApplicationBuilder()
@@ -3013,8 +3565,9 @@ def main():
         .build()
     )
     app.add_error_handler(on_error)
+    app.add_handler(TypeHandler(Update, user_guard), group=-1)   # banned users are ignored; names are remembered
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("language", language_cmd))
     # Admin-only: single /admin panel for switching the Flask server
     app.add_handler(CommandHandler("admin", admin_cmd))   # hidden, admin only (no button for it)
     app.add_handler(CommandHandler("myid", myid_cmd))     # hidden, needed once to find ADMIN_CHAT_ID
@@ -3026,7 +3579,7 @@ def main():
     # Catches the backup file the admin uploads after tapping ↻ Restore
     app.add_handler(MessageHandler(filters.Document.ALL, admin_document_input))
     app.add_handler(MessageHandler(filters.PHOTO, photo_input))   # ❖ logo picture
-    app.job_queue.run_repeating(digest_loop, interval=60, first=0)
+    app.job_queue.run_repeating(digest_loop, interval=30, first=0)   # 30s + last-sent + grace: never misses / never doubles
     app.job_queue.run_repeating(pre_news_loop, interval=15, first=5)
     app.job_queue.run_repeating(date_loop, interval=30, first=0)   # 30s + last_sent: never misses / never doubles
     app.job_queue.run_repeating(reminders_tick, interval=30, first=5)   # ◷ due reminders

@@ -25,6 +25,8 @@ import logging
 
 import bot_settings as cfg
 from bot import tz as zones
+from bot import image_locale
+from bot import language as i18n
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,9 @@ WEEKDAYS = {   # Python weekday(): Monday = 0
     'en': ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
 }
 WEEK_ORDER = {'fa': [5, 6, 0, 1, 2, 3, 4], 'en': [0, 1, 2, 3, 4, 5, 6]}   # Persian week starts on Saturday
+for _lang in image_locale.SUPPORTED:
+    WEEKDAYS[_lang] = image_locale.DAYS[_lang]
+    WEEK_ORDER[_lang] = WEEK_ORDER['en']
 _TO_LATIN = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 _TO_FA = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
@@ -102,6 +107,8 @@ def fmt_date(d: date, lang: str, weekday: bool = True) -> str:
     if lang == 'fa':
         jy, jm, jd = g2j(d.year, d.month, d.day)
         s = f"{fa_num(jd)} {J_MONTHS['fa'][jm - 1]} {fa_num(jy)}"
+    elif lang in image_locale.SUPPORTED:     # month names in the user's own language
+        s = f"{d.day} {image_locale.MONTHS[lang][d.month - 1]} {d.year}"
     else:
         s = f"{d.day} {G_MONTHS['en'][d.month - 1]} {d.year}"
     return f"{wd} {s}" if weekday else s
@@ -112,6 +119,9 @@ def short_date(d: date, lang: str) -> str:
     if lang == 'fa':
         _, jm, jd = g2j(d.year, d.month, d.day)
         return f"{WEEKDAYS['fa'][d.weekday()]} {fa_num(jd)} {J_MONTHS['fa'][jm - 1]}"
+    if lang in image_locale.SUPPORTED:
+        short = (lambda w: w) if lang in ("hi", "vi") else (lambda w: w[:3])   # Devanagari / Vietnamese: no cutting
+        return f"{short(WEEKDAYS[lang][d.weekday()])} {d.day} {short(image_locale.MONTHS[lang][d.month - 1])}"
     return f"{WEEKDAYS['en'][d.weekday()][:3]} {d.day} {G_MONTHS['en'][d.month - 1]}"
 
 
@@ -161,7 +171,7 @@ def get_tz(chat_id: int, lang: str) -> str:
 def tz_label(tz: str, lang: str) -> str:
     for name, fa, en in TIMEZONES:
         if name == tz:
-            return fa if lang == 'fa' else en
+            return zones.label(name, lang)
     return tz
 
 
@@ -326,6 +336,9 @@ T = {
 }
 
 
+i18n.fill(T)
+
+
 def _t(lang: str) -> dict:
     return T.get(lang, T['en'])
 
@@ -349,9 +362,10 @@ def _when(r: dict, lang: str) -> str:
 
 def _monthly_label(day: int, cal: str, lang: str, key: str) -> str:
     t = _t(lang)
-    if lang == 'en' and cal == 'jalali':
+    if lang != 'fa' and cal == 'jalali':
         # Keep existing schedules intact; do not misrepresent them as Gregorian.
-        return "🗓 <b>Monthly (existing schedule)</b>" if key == "head_monthly" else "monthly (existing schedule)"
+        return (i18n.t(lang, "🗓 <b>Monthly (existing schedule)</b>") if key == "head_monthly"
+                else i18n.t(lang, "monthly (existing schedule)"))
     return t[key].format(d=fa_num(day) if lang == 'fa' else day, cal=t['cal_' + (cal or 'gregorian')])
 
 
@@ -411,7 +425,7 @@ def weekday_view(lang: str) -> tuple[str, KB]:
 
 def monthday_view(lang: str, cal: str) -> tuple[str, KB]:
     t = _t(lang)
-    if lang == 'en':
+    if lang != 'fa':
         cal = 'gregorian'
     rows = ([[B(("✅ " if c == cal else "") + t['cal_' + c], callback_data=f"rem_mc_{c}") for c in ("jalali", "gregorian")]]
             if lang == 'fa' else [])
@@ -463,9 +477,9 @@ def list_view(chat_id: int, lang: str, page: int = 0) -> tuple[str, KB]:
 def tz_view(chat_id: int, lang: str) -> tuple[str, KB]:
     t, cur = _t(lang), get_tz(chat_id, lang)
     auto_on = zones.is_auto(chat_id)
-    auto_lbl = ("✅ " if auto_on else "") + ("🔄 خودکار · " if lang == 'fa' else "🔄 Automatic · ") \
+    auto_lbl = ("✅ " if auto_on else "") + ("🔄 خودکار · " if lang == 'fa' else i18n.t(lang, "🔄 Automatic · ")) \
         + zones.city(zones.auto_name(lang), lang)
-    btns = [B(("✅ " if (name == cur and not auto_on) else "") + (fa if lang == 'fa' else en), callback_data=f"rem_z_{i}")
+    btns = [B(("✅ " if (name == cur and not auto_on) else "") + zones.label(name, lang), callback_data=f"rem_z_{i}")
             for i, (name, fa, en) in enumerate(TIMEZONES)]
     rows = [[B(auto_lbl, callback_data="rem_z_auto")]] + [btns[i:i + 2] for i in range(0, len(btns), 2)] \
         + [[B(t['back'], callback_data="rem")]]
@@ -517,8 +531,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lang: str)
         view = monthday_view(lang, cal if cal in ("jalali", "gregorian") else "gregorian")
     elif data.startswith("rem_md_"):
         _, _, cal, n = data.split("_")
-        if lang == 'en' and cal != 'gregorian':
-            await q.answer("Please select a Gregorian day.")
+        if lang != 'fa' and cal != 'gregorian':
+            await q.answer(i18n.t(lang, "Please select a Gregorian day."))
             await _edit(q.message, *monthday_view(lang, 'gregorian'))
             return
         # monthly reuses the columns: on_date = calendar, weekday = day of month
@@ -559,7 +573,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lang: str)
         view = tz_view(cid, lang)
     elif data == "rem_z_auto":
         set_tz(cid, None, lang)
-        toast = t['tz_set'].format(tz=("خودکار · " if lang == 'fa' else "Automatic · ") + zones.city(get_tz(cid, lang), lang))
+        toast = t['tz_set'].format(tz=("خودکار · " if lang == 'fa' else i18n.t(lang, "Automatic · ")) + zones.city(get_tz(cid, lang), lang))
         view = home_view(cid, lang)
     elif data.startswith("rem_z_"):
         i = int(data[6:])
@@ -643,7 +657,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lang: str):
                          reply_markup=after_save_kb(lang), parse_mode=ParseMode.HTML)
 
 
-async def tick(ctx: ContextTypes.DEFAULT_TYPE, get_language=None, keyboard_for=None):
+async def tick(ctx: ContextTypes.DEFAULT_TYPE, get_language=None, keyboard_for=None, skip=None):
     """Job (every 30s): send due reminders, then schedule the next one / delete one-time ones."""
     now = int(_time.time())
     try:
@@ -664,6 +678,8 @@ async def tick(ctx: ContextTypes.DEFAULT_TYPE, get_language=None, keyboard_for=N
                 conn.execute("UPDATE user_reminders SET next_run = ? WHERE id = ?",
                              (next_run(kind, hhmm, tz, on_date, wd), rid))
         if kind != "once" and late > LATE_SKIP:
+            continue
+        if skip and cid in skip:      # banned user: rescheduled above, nothing is sent
             continue
         lang = get_language(cid) if get_language else "fa"
         try:

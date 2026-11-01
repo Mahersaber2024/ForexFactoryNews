@@ -13,6 +13,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 import bot_settings as cfg
+from bot import language as i18n
 from db import postgres as database
 
 AWAIT_CHANNEL = "set_channel"
@@ -106,8 +107,18 @@ T = {
 }
 
 
+i18n.fill(T)
+
+
 def _t(lang: str) -> dict:
     return T.get(lang, T["en"])
+
+PANEL_EN = ("◈ <b>Publishing channels</b>\n\n{names}\n\n"
+            "Add {bot} to the channel with <b>Post messages</b> permission, "
+            "then send its username or forward a channel post.\n\n"
+            "▾ Tap a channel's name to set its own look (text/picture, style, logo).")
+NO_CHANNELS_EN = "No channels connected yet."
+
 
 def channel_panel(cid: int, ctx, language: str) -> tuple[str, KB]:
     connected = get_channels(cid)
@@ -121,12 +132,9 @@ def channel_panel(cid: int, ctx, language: str) -> tuple[str, KB]:
                 "▾ روی اسم هر کانال بزن تا ظاهر ارسال (متن/تصویر، استایل، لوگو) همون کانال رو تنظیم کنی.")
         add, back = "+ افزودن کانال", "‹ بازگشت"
     else:
-        text = ("◈ <b>Publishing channels</b>\n\n"
-                f"{names if names else 'No channels connected yet.'}\n\n"
-                f"Add {bot} to the channel with <b>Post messages</b> permission, "
-                "then send its username or forward a channel post.\n\n"
-                "▾ Tap a channel's name to set its own look (text/picture, style, logo).")
-        add, back = "+ Add channel", "‹ Back"
+        text = i18n.t(language, PANEL_EN).format(
+            names=names if names else i18n.t(language, NO_CHANNELS_EN), bot=bot)
+        add, back = i18n.t(language, "+ Add channel"), i18n.t(language, "‹ Back")
     from bot import channel_style   # lazy: channel_style imports this module
     rows = [[B(add, callback_data="chan_add")]]
     btns = []
@@ -161,7 +169,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: 
             return
         remove_channel(q.message.chat.id, channel_id)
         ctx.user_data.pop("awaiting", None)
-        await q.answer("حذف شد" if language == "fa" else "Removed")
+        await q.answer("حذف شد" if language == "fa" else i18n.t(language, "Removed"))
         text, kb = channel_panel(q.message.chat.id, ctx, language)
         await q.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
         return
@@ -176,7 +184,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: 
         ctx.user_data.pop("chan_back", None)
     await q.answer()
     text = ("شناسه کانال رو بفرست یا یک پیام از کانال فوروارد کن." if language == "fa"
-            else "Send the channel username or forward a channel post.")
+            else i18n.t(language, "Send the channel username or forward a channel post."))
     await q.message.edit_text(text,
                               reply_markup=KB([[B(t["cancel"], callback_data="cal" if from_cal else "my_channel")]]),
                               parse_mode=ParseMode.HTML)
@@ -211,12 +219,12 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: s
     bot = _bot_name(ctx)
     ref = _channel_ref(msg)
     if ref is None:
-        await msg.reply_text("شناسه یا پیام کانال رو پیدا نکردم." if language == "fa" else "Channel not found.", parse_mode=ParseMode.HTML)
+        await msg.reply_text("شناسه یا پیام کانال رو پیدا نکردم." if language == "fa" else i18n.t(language, "Channel not found."), parse_mode=ParseMode.HTML)
         return
     try:
         chat = await ctx.bot.get_chat(ref)
     except TelegramError:
-        await msg.reply_text("کانال پیدا نشد؛ شناسه و دسترسی ربات رو بررسی کن." if language == "fa" else "Channel not found. Check its username and the bot's access.", parse_mode=ParseMode.HTML)
+        await msg.reply_text("کانال پیدا نشد؛ شناسه و دسترسی ربات رو بررسی کن." if language == "fa" else i18n.t(language, "Channel not found. Check its username and the bot's access."), parse_mode=ParseMode.HTML)
         return
     if chat.type != ChatType.CHANNEL:
         await msg.reply_text(t["not_channel"], parse_mode=ParseMode.HTML)
@@ -224,13 +232,13 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: s
     try:
         me = await ctx.bot.get_chat_member(chat.id, ctx.bot.id)
     except TelegramError:
-        await msg.reply_text("دسترسی «ارسال پیام» رو به ربات بده." if language == "fa" else "Give the bot permission to post messages.", parse_mode=ParseMode.HTML)
+        await msg.reply_text("دسترسی «ارسال پیام» رو به ربات بده." if language == "fa" else i18n.t(language, "Give the bot permission to post messages."), parse_mode=ParseMode.HTML)
         return
     if me.status not in ADMIN_STATUSES:
-        await msg.reply_text("دسترسی «ارسال پیام» رو به ربات بده." if language == "fa" else "Give the bot permission to post messages.", parse_mode=ParseMode.HTML)
+        await msg.reply_text("دسترسی «ارسال پیام» رو به ربات بده." if language == "fa" else i18n.t(language, "Give the bot permission to post messages."), parse_mode=ParseMode.HTML)
         return
     if me.status == ChatMemberStatus.ADMINISTRATOR and getattr(me, "can_post_messages", True) is False:
-        await msg.reply_text("دسترسی «ارسال پیام» رو به ربات بده." if language == "fa" else "Give the bot permission to post messages.", parse_mode=ParseMode.HTML)
+        await msg.reply_text("دسترسی «ارسال پیام» رو به ربات بده." if language == "fa" else i18n.t(language, "Give the bot permission to post messages."), parse_mode=ParseMode.HTML)
         return
     try:
         member = await ctx.bot.get_chat_member(chat.id, update.effective_user.id)
@@ -240,7 +248,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: s
         permitted = False
     if not permitted:
         await msg.reply_text("برای اتصال، باید دسترسی ارسال پیام در این کانال داشته باشی." if language == "fa"
-                             else "You need permission to post in this channel to connect it.", parse_mode=ParseMode.HTML)
+                             else i18n.t(language, "You need permission to post in this channel to connect it."), parse_mode=ParseMode.HTML)
         return
     set_channel(msg.chat.id, chat.id, chat.title or "", chat.username)
     ctx.user_data.pop("awaiting", None)
@@ -250,7 +258,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: s
         text, kb = on_connected(msg.chat.id, chat.id, language)
     else:
         text, kb = channel_panel(msg.chat.id, ctx, language)
-    success = f"✓ {ch} وصل شد.\n\n" if language == "fa" else f"✓ {ch} connected.\n\n"
+    success = (f"✓ {ch} وصل شد.\n\n" if language == "fa"
+               else i18n.t(language, "✓ {ch} connected.\n\n").format(ch=ch))
     await msg.reply_text(success + text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 
@@ -263,7 +272,7 @@ async def notify_failed(ctx, chat_id: int, language: str, ch: dict):
         name = html.escape(label(ch), quote=False)
         text = (f"△ ارسال به <b>{name}</b> ناموفق بود. دسترسی ارسال پیام ربات رو بررسی کن."
                 if language == "fa" else
-                f"△ Could not post to <b>{name}</b>. Check the bot's Post messages permission.")
+                i18n.t(language, "△ Could not post to <b>{name}</b>. Check the bot's Post messages permission.").format(name=name))
         await ctx.bot.send_message(chat_id, text,
                                    parse_mode=ParseMode.HTML)
         _last_failure_notice[key] = now

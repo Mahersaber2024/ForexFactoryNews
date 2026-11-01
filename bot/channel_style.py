@@ -2,14 +2,14 @@
 ❖ Channel look: how the Daily High-Impact News is posted in EACH of a user's channels.
 
   • mode   "text" (default) or "image" (calendar picture + caption with only the important news)
-  • style  one of 6 numbered designs (Timeline, Bento, Editorial, HUD, Ticket, Spotlight), shown together in ONE picture
+  • style  one of 8 numbered designs (Timeline, Bento, Soft Ledger, HUD, Ticket, Spotlight, Aurora Light, Aurora Dark), shown together in ONE picture
   • logo   optional, per channel: an uploaded picture, or a generated monogram (1-3 letters on a gradient badge).
-           The 6 designs are rebuilt from its colour.
+           The 8 designs are rebuilt from its colour.
 
 Settings live in channel_style_multi (chat_id, channel_id). A channel without its own row inherits the old
 per-user row (channel_style), so nothing changes for existing users until they touch a channel.
 Logos are stored as PostgreSQL BYTEA, so the normal backup / restore includes them.
-The channel name is never drawn on the picture.
+The channel id (@mychannel) is drawn in the header of every news picture (not on the shared calendar/date picture).
 
 Callback data (all start with "chs:"):
   chs:c:<ch>            look panel of one channel
@@ -46,6 +46,8 @@ from telegram.ext import ContextTypes
 import bot_settings as cfg
 from db import postgres as database
 from bot import calendar_image as ci
+from bot import image_locale
+from bot import language as i18n
 from bot import channels
 
 log = logging.getLogger(__name__)
@@ -59,6 +61,14 @@ MAX_UPLOAD = 10 * 1024 * 1024
 ROWS_PER_IMAGE = 12
 MAX_IMAGES = 4
 N_DESIGNS = len(ci.STYLE_KEYS)
+_OLD_THEMES = {"ledger": "editorial"}       # the old Ledger design left the picker: its channels get its twin, Soft Ledger
+
+
+def _theme_of(key) -> str:
+    key = _OLD_THEMES.get(key, key)
+    return key if key in ci.STYLE_KEYS else ci.STYLE_KEYS[0]
+
+
 CAL_ID = 0                      # pseudo channel id = the calendar picture look (separate from every news channel)
 
 MONO_COLORS = [(("آبی", "Blue"), (37, 99, 235)), (("بنفش", "Violet"), (124, 58, 237)), (("سبز", "Green"), (5, 150, 105)),
@@ -84,7 +94,7 @@ def get_style(chat_id: int, channel_id: int | None = None, blobs: bool = False) 
         return {"mode": "image" if channel_id == CAL_ID else "text", "theme": ci.STYLE_KEYS[0],
                 "logo": None if blobs else False}
     return {"mode": "image" if channel_id == CAL_ID else (row[0] if row[0] in ("text", "image") else "text"),
-            "theme": row[1] if row[1] in ci.STYLE_KEYS else ci.STYLE_KEYS[0],   # old theme names -> style 1
+            "theme": _theme_of(row[1]),   # old theme names -> style 1
             "logo": row[2] if blobs else bool(row[2])}
 
 
@@ -107,6 +117,22 @@ def _set(chat_id: int, channel_id: int, **fields):
         for col, val in fields.items():
             conn.execute(f"UPDATE channel_style_multi SET {col} = ? WHERE chat_id = ? AND channel_id = ?",
                          (val, chat_id, channel_id))
+
+
+def season_on(chat_id: int) -> bool:
+    """Calendar picture in the colours + decor of the current season. ON unless the user switched it off."""
+    try:
+        with closing(database.connect()) as conn:
+            row = conn.execute("SELECT value FROM bot_config WHERE key = ?", (f"cal_season_{chat_id}",)).fetchone()
+        return not (row and row[0] == "0")
+    except Exception:
+        return True
+
+
+def set_season(chat_id: int, on: bool):
+    with closing(database.connect()) as conn, conn:
+        conn.execute("INSERT INTO bot_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                     (f"cal_season_{chat_id}", "1" if on else "0"))
 
 
 def forget(chat_id: int, channel_id: int):
@@ -175,21 +201,40 @@ _FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 _IMPACT_FA = {"High": "بالا", "Medium": "متوسط", "Low": "کم"}
 
 
+def channel_tag(chat_id: int, channel_id: int | None) -> str:
+    """'@mychannel' (or the channel title when it has no username) for the picture header; '' when unknown / not a channel."""
+    if not channel_id or channel_id == CAL_ID:
+        return ""
+    try:
+        for ch in channels.get_channels(chat_id):
+            if ch["id"] == channel_id:
+                return channels.label(ch)
+    except Exception:
+        log.debug("channel tag lookup failed", exc_info=True)
+    return ""
+
+
 def render_png(chat_id: int, events: list[dict], impacts: list[str], channel_id: int | None = None,
                tz: str = "America/New_York", language: str = "en") -> list[bytes]:
-    """One or more PNGs (12 events each, max 4 images) in the channel's style. Blocking: use to_thread.
+    """One or more PNGs (12 events each, 20 for Ledger, max 4 images) in the channel's style. Blocking: use to_thread.
     `events` must already be in the user's time zone (tz.localize_events); `tz` is that zone's name (the captions say
     which clock it is); `language` 'fa' = Persian labels (only when the server can draw Persian, else English)."""
     st = get_style(chat_id, channel_id, blobs=True)
     fa = language == "fa" and ci.RTL_OK
+    ch_tag = channel_tag(chat_id, channel_id)
     only_high = list(impacts) == ["High"]
     if fa:
-        title = "اخبار مهم روزانه" if only_high else "اخبار اقتصادی روزانه"
+        title = "اخبار اقتصادی فارکس"
         label = "اهمیت بالا" if only_high else "اهمیت " + " · ".join(_IMPACT_FA[i] for i in ("High", "Medium", "Low") if i in impacts)
+    elif language in image_locale.SUPPORTED:
+        title = image_locale.label(language, "news")
+        label = (image_locale.label(language, "high_impact") if only_high else
+                 " · ".join(image_locale.label(language, i.lower()) for i in ("High", "Medium", "Low") if i in impacts))
     else:
-        title = "Daily High-Impact News" if only_high else "Daily Economic News"
+        title = "Forex Economic News"
         label = "High impact" if only_high else " · ".join(i for i in ("High", "Medium", "Low") if i in impacts) + " impact"
-    chunks = [events[i:i + ROWS_PER_IMAGE] for i in range(0, len(events), ROWS_PER_IMAGE)][:MAX_IMAGES] or [[]]
+    per = ci.rows_per_image(st["theme"], ROWS_PER_IMAGE)          # dense designs (Ledger) fit more rows per picture
+    chunks = [events[i:i + per] for i in range(0, len(events), per)][:MAX_IMAGES] or [[]]
     pngs = []
     for n, chunk in enumerate(chunks, 1):
         if len(chunks) == 1:
@@ -197,16 +242,17 @@ def render_png(chat_id: int, events: list[dict], impacts: list[str], channel_id:
         else:
             part = f"{n}/{len(chunks)}"
             t = f"{title}  {part.translate(_FA_DIGITS) if fa else part}"
-        pngs.append(ci.render_calendar(chunk, st["theme"], t, st["logo"] or ci.DEFAULT_LOGO,
-                                       impact_label=label, max_rows=ROWS_PER_IMAGE, tz=tz,
-                                       language="fa" if fa else "en"))
+        pngs.append(ci.render_calendar(chunk, st["theme"], t, st["logo"],
+                                       impact_label=label, max_rows=per, tz=tz,
+                                       language=language if language in image_locale.SUPPORTED else ("fa" if fa else "en"),
+                                       channel=ch_tag))
     return pngs
 
 
 def render_date(chat_id: int, channel_id: int, model: dict) -> bytes:
     """▦ today's calendar as a picture in the CALENDAR look (never a news channel's). Blocking: use to_thread."""
     st = get_style(chat_id, CAL_ID, blobs=True)
-    return ci.render_date_card(model, st["theme"], st["logo"] or ci.DEFAULT_LOGO)
+    return ci.render_date_card(model, st["theme"], st["logo"])
 
 
 _SHEET_CACHE: dict = {}
@@ -226,7 +272,8 @@ def _sheet_key(chat_id: int, channel_id: int, language: str = "") -> str:
     base = hashlib.sha1(logo).hexdigest() if logo else "default"
     zone = _zone_of(chat_id, language)
     # calendar and news sheets never share a cache; language and time zone are part of the picture
-    return f"cal:{language}:{zone}:{base}" if channel_id == CAL_ID else f"news:{language}:{zone}:{base}"
+    return (f"cal:{language}:{zone}:{base}:s{int(season_on(chat_id))}" if channel_id == CAL_ID
+            else f"news:{language}:{zone}:{base}:{channel_tag(chat_id, channel_id)}")
 
 
 def sheet_cached(chat_id: int, channel_id: int, language: str = "") -> bool:
@@ -234,8 +281,8 @@ def sheet_cached(chat_id: int, channel_id: int, language: str = "") -> bool:
 
 
 def render_sheet(chat_id: int, channel_id: int, progress=None, language: str = "en") -> bytes:
-    """All 6 designs in one numbered picture, built from the channel's logo (or the bot's). Cached: it takes ~7 s.
-    NEWS channel -> the 6 news designs.  CAL_ID -> the 6 designs of the DATE card (today's date).
+    """All 8 designs in one numbered picture, built from the channel's logo (or the bot's). Cached: it takes ~7 s.
+    NEWS channel -> the 8 news designs.  CAL_ID -> the 8 designs of the DATE card (today's date).
     progress(done, total) is called from this (worker) thread after every step."""
     logo = get_style(chat_id, channel_id, blobs=True)["logo"]
     key = _sheet_key(chat_id, channel_id, language)
@@ -243,17 +290,18 @@ def render_sheet(chat_id: int, channel_id: int, progress=None, language: str = "
         if len(_SHEET_CACHE) >= 30:
             _SHEET_CACHE.pop(next(iter(_SHEET_CACHE)))
         if channel_id == CAL_ID:
-            _SHEET_CACHE[key] = ci.render_date_sheet(date_model_provider(language, chat_id), logo or ci.DEFAULT_LOGO, progress=progress)
+            _SHEET_CACHE[key] = ci.render_date_sheet(date_model_provider(language, chat_id), logo, progress=progress)
         else:
-            _SHEET_CACHE[key] = ci.render_sheet(logo or ci.DEFAULT_LOGO, progress=progress,
-                                                language=language, tz=_zone_of(chat_id, language))
+            _SHEET_CACHE[key] = ci.render_sheet(logo, progress=progress,
+                                                language=language, tz=_zone_of(chat_id, language),
+                                                channel=channel_tag(chat_id, channel_id))
     return _SHEET_CACHE[key]
 
 
 # ───────────────  UI helpers  ────────────────
-def _style_label(st: dict) -> str:
+def _style_label(st: dict, language: str = "en") -> str:
     n = ci.STYLE_KEYS.index(st["theme"]) + 1
-    return f"{n} · {ci.STYLE_NAMES[st['theme']]}"
+    return f"{n} · {image_locale.style_name(language, st['theme'], ci.STYLE_NAMES[st['theme']])}"
 
 
 def _name(ch: dict) -> str:
@@ -263,9 +311,9 @@ def _name(ch: dict) -> str:
 def _channel(cid: int, channel_id: int, language: str = "en") -> dict | None:
     """A connected channel, or (channel_id == chat id) the user's own chat as a destination."""
     if channel_id == CAL_ID:
-        return {"id": CAL_ID, "title": "تقویم" if language == "fa" else "Calendar", "username": None}
+        return {"id": CAL_ID, "title": "تقویم" if language == "fa" else i18n.t(language, "Calendar"), "username": None}
     if channel_id == cid:
-        return {"id": cid, "title": "▢ این چت" if language == "fa" else "▢ This chat", "username": None}
+        return {"id": cid, "title": "▢ این چت" if language == "fa" else i18n.t(language, "▢ This chat"), "username": None}
     return next((c for c in channels.get_channels(cid) if c["id"] == channel_id), None)
 
 
@@ -274,19 +322,22 @@ def _bar(pct: int, width: int = 12) -> str:
     return "▰" * full + "▱" * (width - full)
 
 
-def _progress_text(fa: bool, pct: int, done: int = 0, total: int = N_DESIGNS + 1, note: str = "") -> str:
+def _progress_text(fa: bool, pct: int, done: int = 0, total: int = N_DESIGNS + 1, note: str = "",
+                   language: str = "en") -> str:
     if done < N_DESIGNS:
-        step = (f"طرح {done + 1} از {N_DESIGNS}…" if fa else f"Design {done + 1} of {N_DESIGNS}…")
+        step = (f"طرح {done + 1} از {N_DESIGNS}…" if fa
+                else i18n.t(language, "Design {n} of {total}…").format(n=done + 1, total=N_DESIGNS))
     else:
-        step = "چیدن نهایی…" if fa else "Final touches…"
+        step = "چیدن نهایی…" if fa else i18n.t(language, "Final touches…")
     if fa:
         body = (f"❖ <b>دارم طرح‌ها رو با لوگوی خودت می‌سازم</b>\n\n<code>{_bar(pct)}</code>  <b>{pct}%</b>\n{step}")
     else:
-        body = (f"❖ <b>Building the designs with your logo</b>\n\n<code>{_bar(pct)}</code>  <b>{pct}%</b>\n{step}")
+        body = (i18n.t(language, "❖ <b>Building the designs with your logo</b>\n\n<code>{bar}</code>  <b>{pct}%</b>\n{step}")
+                .format(bar=_bar(pct), pct=pct, step=step))
     return (note + "\n\n" + body) if note else body
 
 
-async def _run_with_progress(target, fa: bool, note: str, work):
+async def _run_with_progress(target, fa: bool, note: str, work, language: str = "en"):
     """Run work(progress_cb) in a thread while editing `target` with a live percentage."""
     st = {"done": 0, "total": N_DESIGNS + 1, "t": time.monotonic()}
     took: list[float] = []
@@ -308,7 +359,7 @@ async def _run_with_progress(target, fa: bool, note: str, work):
         if pct != last:
             last = pct
             try:
-                await target.edit_text(_progress_text(fa, pct, done, total, note), parse_mode=ParseMode.HTML)
+                await target.edit_text(_progress_text(fa, pct, done, total, note, language), parse_mode=ParseMode.HTML)
             except TelegramError:
                 pass                          # "not modified" / flood limit: the next tick tries again
         if task.done():
@@ -350,15 +401,17 @@ def panel(cid: int, ch: dict, language: str) -> tuple[str, KB]:
     if fa:
         text = (f"❖ <b>ظاهر ارسال · {_name(ch)}</b>\n\n"
                 f"ارسال به صورت: <b>{'▣ تصویر' if st['mode'] == 'image' else '✎ متن'}</b>\n"
-                f"استایل: <b>{_style_label(st)}</b>\n"
-                f"لوگو: <b>{'◆ لوگوی شخصی' if st['logo'] else 'پیش‌فرض ربات'}</b>")
+                f"استایل: <b>{_style_label(st, language)}</b>\n"
+                f"لوگو: <b>{'◆ لوگوی شخصی' if st['logo'] else 'بدون لوگو'}</b>")
         b_text, b_img, b_style, b_rm, b_back = "✎ متن", "▣ تصویر", "❖ استایل و لوگو", "✕ قطع این کانال", "‹ کانال‌ها"
     else:
-        text = (f"❖ <b>Look · {_name(ch)}</b>\n\n"
-                f"Post as: <b>{'▣ Picture' if st['mode'] == 'image' else '✎ Text'}</b>\n"
-                f"Style: <b>{_style_label(st)}</b>\n"
-                f"Logo: <b>{'◆ Your own' if st['logo'] else 'Bot default'}</b>")
-        b_text, b_img, b_style, b_rm, b_back = "✎ Text", "▣ Picture", "❖ Style & logo", "✕ Disconnect channel", "‹ Channels"
+        text = (i18n.t(language, "❖ <b>Look · {name}</b>\n\nPost as: <b>{mode}</b>\nStyle: <b>{style}</b>\nLogo: <b>{logo}</b>")
+                .format(name=_name(ch),
+                        mode=i18n.t(language, "▣ Picture") if st['mode'] == 'image' else i18n.t(language, "✎ Text"),
+                        style=_style_label(st, language),
+                        logo=i18n.t(language, "◆ Your own") if st['logo'] else i18n.t(language, "None")))
+        b_text, b_img, b_style, b_rm, b_back = (i18n.t(language, x) for x in
+                                                ("✎ Text", "▣ Picture", "❖ Style & logo", "✕ Disconnect channel", "‹ Channels"))
     mark = lambda on, label: ("✓ " if on else "") + label  # noqa: E731
     own = n == cid                                   # the user's own chat: nothing to disconnect, back = calendar
     rows = [[B(mark(st["mode"] == "text", b_text), callback_data=f"chs:m:{n}:text"),
@@ -366,7 +419,7 @@ def panel(cid: int, ch: dict, language: str) -> tuple[str, KB]:
             [B(b_style, callback_data=f"chs:t:{n}")]]
     if not own:
         rows.append([B(b_rm, callback_data=f"chan_remove_{n}")])
-    rows.append([B(("‹ تقویم" if fa else "‹ Calendar") if own else b_back, callback_data="cal" if own else "my_channel")])
+    rows.append([B(("‹ تقویم" if fa else i18n.t(language, "‹ Calendar")) if own else b_back, callback_data="cal" if own else "my_channel")])
     return text, KB(rows)
 
 
@@ -375,9 +428,16 @@ def _sheet_kb(cid: int, channel_id: int, language: str) -> KB:
     nums = [B(("✓ " if st["theme"] == key and st["mode"] == "image" else "") + str(i),
               callback_data=f"chs:p:{channel_id}:{key}") for i, key in enumerate(ci.STYLE_KEYS, 1)]
     rows = [nums[i:i + 3] for i in range(0, len(nums), 3)]
-    rows.append([B(("◆ تغییر لوگو" if st["logo"] else "◆ لوگو / مونوگرام") if fa else
-                   ("◆ Change logo" if st["logo"] else "◆ Logo / monogram"), callback_data=f"chs:l:{channel_id}")])
-    rows.append([B("‹ بازگشت" if fa else "‹ Back", callback_data="cal" if channel_id == CAL_ID else f"chs:c:{channel_id}")])
+    logo_btn = B(("◆ تغییر لوگو" if st["logo"] else "◆ افزودن لوگو") if fa else
+                 (i18n.t(language, "◆ Change logo") if st["logo"] else i18n.t(language, "◆ Add logo")), callback_data=f"chs:l:{channel_id}")
+    if channel_id == CAL_ID:
+        on = season_on(cid)
+        rows.append([logo_btn,
+                     B(("❀ تم فصل · روشن" if on else "❀ تم فصل · خاموش") if fa else
+                       (i18n.t(language, "❀ Seasons · On") if on else i18n.t(language, "❀ Seasons · Off")), callback_data=f"chs:ss:{channel_id}")])
+    else:
+        rows.append([logo_btn])
+    rows.append([B("‹ بازگشت" if fa else i18n.t(language, "‹ Back"), callback_data="cal" if channel_id == CAL_ID else f"chs:c:{channel_id}")])
     return KB(rows)
 
 
@@ -391,22 +451,23 @@ def _logo_menu(cid: int, ch: dict, language: str) -> tuple[str, KB]:
         rows = [[B("⇧ آپلود لوگو", callback_data=f"chs:u:{n}")] +
                 ([] if cal else [B("Aa ساخت مونوگرام", callback_data=f"chs:mg:{n}")])]
         if has:
-            rows.append([B("⌫ حذف لوگو (پیش‌فرض ربات)", callback_data=f"chs:ld:{n}")])
+            rows.append([B("⌫ حذف لوگو", callback_data=f"chs:ld:{n}")])
         rows.append([B("‹ بازگشت", callback_data=f"chs:t:{n}")])
     else:
-        text = (f"◆ <b>Logo for {_name(ch)}</b>\n\n" +
-                ("Upload your own logo." if cal else "Upload your own logo, or build a sharp monogram from a few letters."))
-        rows = [[B("⇧ Upload logo", callback_data=f"chs:u:{n}")] +
-                ([] if cal else [B("Aa Make a monogram", callback_data=f"chs:mg:{n}")])]
+        text = (i18n.t(language, "◆ <b>Logo for {name}</b>").format(name=_name(ch)) + "\n\n" +
+                (i18n.t(language, "Upload your own logo.") if cal
+                 else i18n.t(language, "Upload your own logo, or build a sharp monogram from a few letters.")))
+        rows = [[B(i18n.t(language, "⇧ Upload logo"), callback_data=f"chs:u:{n}")] +
+                ([] if cal else [B(i18n.t(language, "Aa Make a monogram"), callback_data=f"chs:mg:{n}")])]
         if has:
-            rows.append([B("⌫ Remove logo (bot default)", callback_data=f"chs:ld:{n}")])
-        rows.append([B("‹ Back", callback_data=f"chs:t:{n}")])
+            rows.append([B(i18n.t(language, "⌫ Remove logo"), callback_data=f"chs:ld:{n}")])
+        rows.append([B(i18n.t(language, "‹ Back"), callback_data=f"chs:t:{n}")])
     return text, KB(rows)
 
 
 def _color_kb(channel_id: int, language: str) -> KB:
-    row = [B(names[0 if language == "fa" else 1], callback_data=f"chs:mc:{channel_id}:{i}") for i, (names, _) in enumerate(MONO_COLORS)]
-    return KB([row[:3], row[3:], [B("‹ بازگشت" if language == "fa" else "‹ Back", callback_data=f"chs:l:{channel_id}")]])
+    row = [B(names[0] if language == "fa" else i18n.t(language, names[1]), callback_data=f"chs:mc:{channel_id}:{i}") for i, (names, _) in enumerate(MONO_COLORS)]
+    return KB([row[:3], row[3:], [B("‹ بازگشت" if language == "fa" else i18n.t(language, "‹ Back"), callback_data=f"chs:l:{channel_id}")]])
 
 
 async def _show_sheet(ctx, cid: int, channel_id: int, language: str, note: str = "", target=None):
@@ -425,26 +486,29 @@ async def _show_sheet(ctx, cid: int, channel_id: int, language: str, note: str =
             png = await asyncio.to_thread(render_sheet, cid, channel_id, None, language)
         else:
             if target is None:
-                target = await ctx.bot.send_message(cid, _progress_text(fa, 0, note=note), parse_mode=ParseMode.HTML)
+                target = await ctx.bot.send_message(cid, _progress_text(fa, 0, note=note, language=language), parse_mode=ParseMode.HTML)
             else:
                 try:
-                    await target.edit_text(_progress_text(fa, 0, note=note), parse_mode=ParseMode.HTML)
+                    await target.edit_text(_progress_text(fa, 0, note=note, language=language), parse_mode=ParseMode.HTML)
                 except TelegramError:
                     pass
-            png = await _run_with_progress(target, fa, note, lambda cb: render_sheet(cid, channel_id, cb, language))
+            png = await _run_with_progress(target, fa, note, lambda cb: render_sheet(cid, channel_id, cb, language), language)
             await _delete(target)
     except Exception:
         log.exception("Style sheet for %s/%s failed", cid, channel_id)
         await ctx.bot.send_message(cid, "✕ ساخت طرح‌ها ناموفق بود، دوباره امتحان کن." if fa
-                                   else "✕ Couldn't build the designs, please try again.",
+                                   else i18n.t(language, "✕ Couldn't build the designs, please try again."),
                                    reply_markup=KB([[B("‹", callback_data=f"chs:c:{channel_id}")]]))
         return
-    cap = "❖ <b>یکی از شماره‌ها رو انتخاب کن</b>" if fa else "❖ <b>Pick a number</b>"
+    cap = "❖ <b>یکی از شماره‌ها رو انتخاب کن</b>" if fa else i18n.t(language, "❖ <b>Pick a number</b>")
     if get_style(cid, channel_id)["logo"]:
-        cap += "\nطرح‌ها از روی لوگوی خودت ساخته شدن." if fa else "\nThe designs are built from your logo."
+        cap += "\nطرح‌ها از روی لوگوی خودت ساخته شدن." if fa else i18n.t(language, "\nThe designs are built from your logo.")
     else:
-        cap += ("\nبرای ساخت با رنگ خودت، لوگو یا مونوگرام اضافه کن." if fa else
-                "\nAdd a logo or monogram to rebuild them in your own colours.")
+        cap += ("\nبرای ساخت با رنگ خودت، لوگو اضافه کن." if fa else
+                i18n.t(language, "\nAdd a logo to rebuild them in your own colours."))
+    if channel_id == CAL_ID and season_on(cid):
+        cap += ("\n❀ تم فصل روشنه: رنگ و تزئینات طرح‌ها با فصل جاری عوض می‌شن." if fa else
+                i18n.t(language, "\n❀ Seasons are on: colours and decor follow the current season."))
     if note and sheet_cached(cid, channel_id, language):
         cap = note + "\n\n" + cap
     sent = await ctx.bot.send_photo(cid, io.BytesIO(png), caption=cap, parse_mode=ParseMode.HTML,
@@ -478,7 +542,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: 
         return
     arg = parts[3] if len(parts) > 3 else ""
 
-    if act == "c" and channel_id == CAL_ID:           # calendar look: straight to the 6 designs
+    if act == "c" and channel_id == CAL_ID:           # calendar look: straight to the 8 designs
         act = "t"
     if act == "c":
         ctx.user_data.pop("awaiting", None)
@@ -487,7 +551,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: 
     elif act == "m" and arg in ("text", "image"):
         _set(cid, channel_id, mode=arg)
         await q.answer(("✓ ارسال به صورت " + ("تصویر" if arg == "image" else "متن")) if fa else
-                       ("✓ Posting as " + ("picture" if arg == "image" else "text")))
+                       i18n.t(language, "✓ Posting as picture" if arg == "image" else "✓ Posting as text"))
         await _edit(q.message, *panel(cid, ch, language))
     elif act == "t":
         ctx.user_data.pop("awaiting", None)
@@ -502,7 +566,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: 
         _set(cid, channel_id, theme=arg, mode="image")
         n = ci.STYLE_KEYS.index(arg) + 1
         await q.answer(f"✓ استایل {n} برای {ch.get('title') or channels.label(ch)}" if fa
-                       else f"✓ Style {n} for {ch.get('title') or channels.label(ch)}")
+                       else i18n.t(language, "✓ Style {n} for {name}").format(n=n, name=ch.get('title') or channels.label(ch)))
         try:
             await q.message.edit_reply_markup(reply_markup=_sheet_kb(cid, channel_id, language))
         except BadRequest:
@@ -518,8 +582,19 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: 
     elif act == "u":
         ctx.user_data["awaiting"], ctx.user_data[CH_KEY] = AWAIT_LOGO, channel_id
         await q.answer()
-        await _replace(q, ctx, "◆ لوگوت رو به صورت عکس بفرست." if fa else "◆ Send your logo as a picture.",
-                       KB([[B("‹ بازگشت" if fa else "‹ Back", callback_data=f"chs:l:{channel_id}")]]))
+        await _replace(q, ctx, "◆ لوگوت رو به صورت عکس بفرست." if fa else i18n.t(language, "◆ Send your logo as a picture."),
+                       KB([[B("‹ بازگشت" if fa else i18n.t(language, "‹ Back"), callback_data=f"chs:l:{channel_id}")]]))
+    elif act == "ss" and channel_id == CAL_ID:           # season theme on/off, then rebuild the designs
+        on = not season_on(cid)
+        set_season(cid, on)
+        await q.answer((("❀ تم فصل روشن شد" if on else "❀ تم فصل خاموش شد") if fa else
+                        (i18n.t(language, "❀ Seasons on") if on else i18n.t(language, "❀ Seasons off"))))
+        if getattr(q.message, "photo", None):
+            await _delete(q.message)
+            ctx.user_data.pop(SHEET_MSG, None)
+            await _show_sheet(ctx, cid, channel_id, language)
+        else:
+            await _show_sheet(ctx, cid, channel_id, language, target=q.message)
     elif act in ("mg", "ma", "mc") and channel_id == CAL_ID:      # no monogram for the calendar: back to its logo menu
         await q.answer()
         await _replace(q, ctx, *_logo_menu(cid, ch, language))
@@ -535,18 +610,18 @@ async def _monogram_step(update, ctx, language, ch, act, arg):
     if act == "mg":                                # ask for letters
         ctx.user_data["awaiting"], ctx.user_data[CH_KEY] = AWAIT_MONO, n
         auto = _auto_letters(ch)
-        rows = ([[B(("✦ خودکار: " if fa else "✦ Auto: ") + auto, callback_data=f"chs:ma:{n}")]] if auto else [])
-        rows.append([B("‹ بازگشت" if fa else "‹ Back", callback_data=f"chs:l:{n}")])
+        rows = ([[B(("✦ خودکار: " if fa else i18n.t(language, "✦ Auto: ")) + auto, callback_data=f"chs:ma:{n}")]] if auto else [])
+        rows.append([B("‹ بازگشت" if fa else i18n.t(language, "‹ Back"), callback_data=f"chs:l:{n}")])
         await q.answer()
         await _replace(q, ctx, ("Aa <b>مونوگرام</b>\n\n۱ تا ۳ حرف یا عدد انگلیسی بفرست، مثلاً <code>FX</code>"
                                 if fa else
-                                "Aa <b>Monogram</b>\n\nSend 1–3 letters or digits, for example <code>FX</code>"),
+                                i18n.t(language, "Aa <b>Monogram</b>\n\nSend 1–3 letters or digits, for example <code>FX</code>")),
                        KB(rows))
     elif act == "ma":
         ctx.user_data[MONO_TXT], ctx.user_data[CH_KEY] = _auto_letters(ch), n
         ctx.user_data.pop("awaiting", None)
         await q.answer()
-        await _replace(q, ctx, ("❖ یه رنگ برای مونوگرام انتخاب کن" if fa else "❖ Pick a colour for the monogram"),
+        await _replace(q, ctx, ("❖ یه رنگ برای مونوگرام انتخاب کن" if fa else i18n.t(language, "❖ Pick a colour for the monogram")),
                        _color_kb(n, language))
     else:                                          # "mc": colour picked -> build it
         text = ctx.user_data.get(MONO_TXT)
@@ -558,7 +633,7 @@ async def _monogram_step(update, ctx, language, ch, act, arg):
         if not text:
             await q.answer("Aa")
             ctx.user_data["awaiting"], ctx.user_data[CH_KEY] = AWAIT_MONO, n
-            await _replace(q, ctx, "Aa اول حرف‌ها رو بفرست." if fa else "Aa Send the letters first.",
+            await _replace(q, ctx, "Aa اول حرف‌ها رو بفرست." if fa else i18n.t(language, "Aa Send the letters first."),
                            KB([[B("‹", callback_data=f"chs:l:{n}")]]))
             return
         await q.answer("◴")
@@ -568,9 +643,9 @@ async def _monogram_step(update, ctx, language, ch, act, arg):
         if getattr(q.message, "photo", None):
             await _delete(q.message)
             ctx.user_data.pop(SHEET_MSG, None)
-            await _show_sheet(ctx, cid, n, language, note="✓ مونوگرام ساخته شد." if fa else "✓ Monogram created.")
+            await _show_sheet(ctx, cid, n, language, note="✓ مونوگرام ساخته شد." if fa else i18n.t(language, "✓ Monogram created."))
         else:
-            await _show_sheet(ctx, cid, n, language, note="✓ مونوگرام ساخته شد." if fa else "✓ Monogram created.",
+            await _show_sheet(ctx, cid, n, language, note="✓ مونوگرام ساخته شد." if fa else i18n.t(language, "✓ Monogram created."),
                               target=q.message)
 
 
@@ -582,28 +657,28 @@ async def on_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: str
     channel_id = ctx.user_data.get(CH_KEY)
     if channel_id is None or _channel(cid, channel_id, language) is None:
         ctx.user_data.pop("awaiting", None)
-        await msg.reply_text("✕ اول کانال رو انتخاب کن (◈ کانال من)." if fa else "✕ Pick a channel first (◈ My channel).")
+        await msg.reply_text("✕ اول کانال رو انتخاب کن (◈ کانال من)." if fa else i18n.t(language, "✕ Pick a channel first (◈ My channel)."))
         return
     if msg.photo:
         file_id, size = msg.photo[-1].file_id, msg.photo[-1].file_size
     elif msg.document and (msg.document.mime_type or "").startswith("image/"):
         file_id, size = msg.document.file_id, msg.document.file_size
     else:
-        await msg.reply_text("✕ فقط عکس بفرست." if fa else "✕ Please send an image.")
+        await msg.reply_text("✕ فقط عکس بفرست." if fa else i18n.t(language, "✕ Please send an image."))
         return
     if size and size > MAX_UPLOAD:
-        await msg.reply_text("✕ حجم عکس باید کمتر از ۱۰ مگابایت باشه." if fa else "✕ The image must be under 10 MB.")
+        await msg.reply_text("✕ حجم عکس باید کمتر از ۱۰ مگابایت باشه." if fa else i18n.t(language, "✕ The image must be under 10 MB."))
         return
     try:
         tg_file = await ctx.bot.get_file(file_id)
         data = bytes(await tg_file.download_as_bytearray())
         prepared = await asyncio.to_thread(_prep_logo, data)
     except Exception:
-        await msg.reply_text("✕ این فایل یه عکس معتبر نیست." if fa else "✕ That isn't a valid image.")
+        await msg.reply_text("✕ این فایل یه عکس معتبر نیست." if fa else i18n.t(language, "✕ That isn't a valid image."))
         return
     ctx.user_data.pop("awaiting", None)
     _set(cid, channel_id, logo=prepared)
-    await _show_sheet(ctx, cid, channel_id, language, note="✓ لوگو ذخیره شد." if fa else "✓ Logo saved.")
+    await _show_sheet(ctx, cid, channel_id, language, note="✓ لوگو ذخیره شد." if fa else i18n.t(language, "✓ Logo saved."))
 
 
 async def on_wrong_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE, language: str):
@@ -617,11 +692,11 @@ async def on_wrong_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE, languag
             return
         if not re.fullmatch(r"[A-Z0-9]{1,3}", letters):
             await update.message.reply_text("Aa فقط ۱ تا ۳ حرف یا عدد انگلیسی (مثل FX)." if fa
-                                            else "Aa Only 1–3 letters or digits (A–Z, 0–9), like FX.")
+                                            else i18n.t(language, "Aa Only 1–3 letters or digits (A–Z, 0–9), like FX."))
             return
         ctx.user_data[MONO_TXT] = letters
         ctx.user_data.pop("awaiting", None)
-        await update.message.reply_text(("❖ یه رنگ برای <b>%s</b> انتخاب کن" if fa else "❖ Pick a colour for <b>%s</b>") % letters,
+        await update.message.reply_text(("❖ یه رنگ برای <b>%s</b> انتخاب کن" if fa else i18n.t(language, "❖ Pick a colour for <b>%s</b>")) % letters,
                                         reply_markup=_color_kb(channel_id, language), parse_mode=ParseMode.HTML)
         return
-    await update.message.reply_text("▣ یه عکس بفرست (نه متن)." if fa else "▣ Please send an image, not text.")
+    await update.message.reply_text("▣ یه عکس بفرست (نه متن)." if fa else i18n.t(language, "▣ Please send an image, not text."))
