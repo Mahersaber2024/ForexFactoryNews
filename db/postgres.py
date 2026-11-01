@@ -1,8 +1,12 @@
 """PostgreSQL access and transactional schema setup for ForexFactoryNews."""
 from __future__ import annotations
 
+import os
+import threading
+import time
 from contextlib import closing
 import psycopg2
+from psycopg2 import pool as _pgpool
 import bot_settings as cfg
 
 SCHEMA_VERSION = 1
@@ -73,8 +77,9 @@ class Cursor:
 
 
 class Connection:
-    def __init__(self, raw):
+    def __init__(self, raw, pool=None):
         self.raw = raw
+        self._pool = pool            # set for pooled connections: close() gives it back instead of closing it
 
     def cursor(self):
         return Cursor(self.raw.cursor())
@@ -92,7 +97,18 @@ class Connection:
         self.raw.rollback()
 
     def close(self):
-        self.raw.close()
+        if self._pool is not None:
+            pool, self._pool = self._pool, None
+            pool.give_back(self.raw)
+        elif self.raw is not None:
+            self.raw.close()
+
+    def __del__(self):               # a caller forgot close(): never leak a pool slot
+        try:
+            if self._pool is not None:
+                self.close()
+        except Exception:
+            pass
 
     def __enter__(self):
         return self
@@ -105,13 +121,95 @@ class Connection:
         return False
 
 
-def connect() -> Connection:
-    return Connection(psycopg2.connect(
+# ───────────────  connection pool  ────────────────
+# Opening a PostgreSQL connection costs a TCP + login round trip, and the server only allows ~100 of them. The bot
+# used to open a new one for every tiny query. Now a small pool is shared by all threads (DB_POOL_MAX, default 40).
+POOL_MIN = 2
+POOL_MAX = max(POOL_MIN, int(os.environ.get("DB_POOL_MAX", "40")))
+POOL_WAIT = 30.0                     # seconds to wait for a free connection before giving up
+IDLE_CHECK = 30.0                    # a connection idle longer than this is tested before it is handed out
+
+
+def _kwargs() -> dict:
+    return dict(
         host=cfg.DB_HOST, port=cfg.DB_PORT, dbname=cfg.DB_NAME, user=cfg.DB_USER,
         password=cfg.DB_PASSWORD, sslmode=cfg.DB_SSLMODE, connect_timeout=10,
-        application_name="forexfactory-news",
-        options="-c search_path=public",
-    ))
+        application_name="forexfactory-news", options="-c search_path=public",
+        keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
+    )
+
+
+class _Pool:
+    def __init__(self, kwargs: dict):
+        self.kwargs = kwargs
+        self._pool = _pgpool.ThreadedConnectionPool(POOL_MIN, POOL_MAX, **kwargs)
+        self._slots = threading.BoundedSemaphore(POOL_MAX)     # getconn() raises when full; this makes callers wait
+        self._idle_since: dict[int, float] = {}
+
+    def take(self) -> Connection:
+        if not self._slots.acquire(timeout=POOL_WAIT):
+            raise psycopg2.OperationalError("PostgreSQL connection pool is exhausted (all connections are busy)")
+        try:
+            while True:
+                raw = self._pool.getconn()
+                if raw.closed:
+                    self._pool.putconn(raw, close=True)
+                    continue
+                idle = time.monotonic() - self._idle_since.get(id(raw), time.monotonic())
+                if idle > IDLE_CHECK:                       # the server may have dropped it while it sat in the pool
+                    try:
+                        with raw.cursor() as cur:
+                            cur.execute("SELECT 1")
+                        raw.rollback()
+                    except Exception:
+                        self._pool.putconn(raw, close=True)
+                        continue
+                return Connection(raw, self)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def give_back(self, raw) -> None:
+        try:
+            if raw.closed:
+                self._pool.putconn(raw, close=True)
+            else:
+                try:
+                    raw.rollback()                          # never hand out a half-finished transaction
+                except Exception:
+                    self._pool.putconn(raw, close=True)
+                    return
+                self._idle_since[id(raw)] = time.monotonic()
+                self._pool.putconn(raw)
+        finally:
+            self._slots.release()
+
+
+_pool_lock = threading.Lock()
+_pool: _Pool | None = None
+
+
+def _get_pool() -> _Pool:
+    global _pool
+    kwargs = _kwargs()
+    if _pool is None or _pool.kwargs != kwargs:      # first use, or the settings changed
+        with _pool_lock:
+            if _pool is None or _pool.kwargs != kwargs:
+                old, _pool = _pool, _Pool(kwargs)
+                if old is not None:
+                    try:
+                        old._pool.closeall()
+                    except Exception:
+                        pass
+    return _pool
+
+
+def connect(pooled: bool = True) -> Connection:
+    """A database connection. Pooled by default: close() hands it back to the pool (always close it, `with closing(...)`).
+    pooled=False gives a private connection for work that changes session settings (backup/restore)."""
+    if pooled:
+        return _get_pool().take()
+    return Connection(psycopg2.connect(**_kwargs()))
 
 
 SCHEMA = (

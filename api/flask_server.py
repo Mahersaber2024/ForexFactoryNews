@@ -324,4 +324,12 @@ def yesterday_data():
 if __name__ == '__main__':
     if not DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":   # the debug reloader starts a second process
         start_background()
-    app.run(host=HOST, port=PORT, debug=DEBUG)
+    try:
+        from waitress import serve          # production server: many requests at once (pip install waitress)
+    except ImportError:
+        serve = None
+    if serve and not DEBUG:
+        serve(app, host=HOST, port=PORT, threads=int(os.environ.get("API_THREADS", "32")),
+              connection_limit=int(os.environ.get("API_CONNECTIONS", "2000")))
+    else:
+        app.run(host=HOST, port=PORT, debug=DEBUG, threaded=True)

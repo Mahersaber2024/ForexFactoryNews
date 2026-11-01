@@ -58,7 +58,7 @@ if [ -x "$APP_DIR/.venv/bin/python" ]; then
     read -p "Save a final backup of the bot data to /root before removing? [Y/n]: " DO_BACKUP
     DO_BACKUP=${DO_BACKUP:-Y}
     if [[ "$DO_BACKUP" =~ ^[Yy]$ ]]; then
-        BK=$(cd "$APP_DIR" && .venv/bin/python -c "from bot import backup_manager as b; print(b.create_backup('uninstall'))" 2>/dev/null | tail -1 || true)
+        BK=$(cd "$APP_DIR" && .venv/bin/python -c "from bot.admin import backup_manager as b; print(b.create_backup('uninstall'))" 2>/dev/null | tail -1 || true)
         if [ -n "$BK" ] && [ -f "$BK" ]; then
             cp "$BK" /root/
             echo -e "${GREEN}✓ Backup saved: /root/$(basename "$BK")${NC}"

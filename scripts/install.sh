@@ -158,8 +158,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-# Persian font for the pictures (Vazirmatn into bot/fonts/); a failure here never aborts the install
-(cd "$APP_DIR" && "$APP_DIR/.venv/bin/python" -m bot.font_setup) || true
+# Persian font for the pictures (Vazirmatn into bot/images/fonts/); a failure here never aborts the install
+(cd "$APP_DIR" && "$APP_DIR/.venv/bin/python" -m bot.images.font_setup) || true
 
 PUBLIC_BASE_URL=""
 if [ -n "$DOMAIN_NAME" ]; then

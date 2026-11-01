@@ -32,7 +32,7 @@ def export_snapshot(destination: Path) -> dict[str, int]:
     """Write all application tables from one consistent PostgreSQL snapshot."""
     tables: dict[str, dict] = {}
     counts: dict[str, int] = {}
-    with closing(pg.connect()) as src:
+    with closing(pg.connect(pooled=False)) as src:
         src.raw.set_session(isolation_level="REPEATABLE READ", readonly=True)
         for table, columns in pg.TABLES.items():
             fields = ", ".join(f'"{col}"' for col in columns)
@@ -73,7 +73,7 @@ def import_snapshot(source: Path, *, replace: bool = False) -> dict[str, int]:
     """Import in one PostgreSQL transaction. replace=False refuses any nonempty target."""
     document = _load(source)
     pg.initialize()
-    with closing(pg.connect()) as conn, conn:
+    with closing(pg.connect(pooled=False)) as conn, conn:
         conn.execute("SELECT pg_advisory_xact_lock(694711018)")
         tables = ", ".join(f'public."{name}"' for name in pg.TABLES)
         conn.execute(f"LOCK TABLE {tables} IN ACCESS EXCLUSIVE MODE")

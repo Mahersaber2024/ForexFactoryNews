@@ -1,5 +1,5 @@
 # Core dependencies
-python-telegram-bot[job-queue]
+python-telegram-bot[job-queue,rate-limiter]
 
 # Database & Time
 psycopg2-binary>=2.9,<3
@@ -19,3 +19,4 @@ fonttools
 
 # Web
 Flask
+waitress
